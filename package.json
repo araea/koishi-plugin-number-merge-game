@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-number-merge-game",
-  "description": "",
+  "description": "2048 小游戏，将数字组合起来以获得 2048。",
   "version": "0.0.1",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
@@ -8,14 +8,37 @@
     "lib",
     "dist"
   ],
+  "koishi": {
+    "service": {
+      "required": [
+        "monetary",
+        "database",
+        "puppeteer"
+      ]
+    }
+  },
   "license": "MIT",
-  "scripts": {},
+  "author": "Nawyjx <3373167460@qq.com>",
+  "homepage": "https://www.npmjs.com/package/koishi-plugin-number-merge-game?activeTab=readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/araea/koishi-plugin-number-merge-game.git"
+  },
   "keywords": [
     "chatbot",
     "koishi",
-    "plugin"
+    "plugin",
+    "2048",
+    "2048Game",
+    "game",
+    "游戏",
+    "数字合并小游戏"
   ],
   "peerDependencies": {
-    "koishi": "4.16.6"
+    "koishi": "^4.16.6"
+  },
+  "devDependencies": {
+    "koishi-plugin-monetary": "^0.1.3",
+    "koishi-plugin-puppeteer": "^3.7.3"
   }
 }
