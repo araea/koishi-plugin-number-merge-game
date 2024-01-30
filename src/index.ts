@@ -413,7 +413,7 @@ export function apply(ctx: Context, config: Config) {
         }
       }
 
-      console.log(`state:`, state)
+      // console.log(`state:`, state)
       const isWon = hasValue2048(state);
       if (isWon) {
         await ctx.database.set('game_2048_records', {guildId}, {isWon: true})
