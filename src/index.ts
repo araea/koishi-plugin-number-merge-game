@@ -7,9 +7,25 @@ export const name = 'number-merge-game'
 export const inject = {
   required: ['monetary', 'database', 'puppeteer'],
 }
-export const usage = ``
+export const usage = `## 🌈 使用
+
+- 启动必要的服务。您需要启用 \`monetary\`，\`database\` 和 \`puppeteer\` 插件，以实现货币系统，数据存储和图片生成的功能。
+- 建议自行添加指令别名，以方便您和您的用户使用。
+
+## 🌼 指令
+
+- \`2048Game\`：显示 2048 游戏的指令帮助。
+- \`2048Game.加入 [money:number]\`：加入游戏，可选参数为投入的货币数额。
+- \`2048Game.退出\`：退出游戏，如果游戏未开始，会退还投入的货币。
+- \`2048Game.开始 [gridSize:number]\`：开始游戏，需要至少有一个玩家加入。
+- \`2048Game.重置\`：强制重置游戏，不会退还投入的货币。
+- \`2048Game.移动 [operation:text]\`：进行移动操作，参数为方向，可选 \`上/s/u\`，\`下/x/d\`，\`左/z/l\`，\`右/y/r\`，也可以一次输入多个方向。
+- \`2048Game.历史最高\`：查看历史最高记录，可选参数 \`-a\` 跨群查询。
+- \`2048Game.排行榜 [number:number]\`：查看排行榜相关指令，可选 \`胜场\`，\`输场\`，\`最高分数\`。
+- \`2048Game.查询玩家记录 [targetUser:text]\`：查询玩家游戏记录信息，可选参数为目标玩家的 at 信息。`
 
 export interface Config {
+  defaultGridSize2048: number
   maxInvestmentCurrency: number
   defaultMaxLeaderboardEntries: number
   rewardMultiplier2048Win: number
@@ -23,6 +39,7 @@ export const Config: Schema<Config> = Schema.object({
   maxInvestmentCurrency: Schema.number().min(0).default(50).description(`加入游戏时可投入的最大货币数额。`),
   defaultMaxLeaderboardEntries: Schema.number().min(0).default(10).description(`显示排行榜时默认的最大人数。`),
   rewardMultiplier2048Win: Schema.number().min(0).default(2).description(`达成 2048 赢了之后可得到的货币倍数。`),
+  defaultGridSize2048: Schema.number().min(4).max(8).default(4).description(`开始 2048 游戏时默认的游戏网格大小，范围 4~8，值为 4 时为经典模式，才会记分和奖励。`),
   imageType: Schema.union(['png', 'jpeg', 'webp']).default('png').description(`发送的图片类型。`),
   enableContinuedPlayAfter2048Win: Schema.boolean().default(true).description(`是否开启赢得2048后的继续游戏功能。`),
   rewardHighNumbers: Schema.boolean().default(true).description(`是否对后续的高数字进行奖励。`),
@@ -56,6 +73,7 @@ export interface GameRecord {
   best: number
   highestNumber: number
   bestPlayers: BestPlayer[] // json
+  gridSize: number
 }
 
 // 游戏中玩家数据表 players_in_2048_playing ： id 群组id 用户id 用户名 money
@@ -103,6 +121,7 @@ export function apply(ctx: Context, config: Config) {
       ]
     },
     highestNumber: 'unsigned',
+    gridSize: 'unsigned',
   }, {
     primary: 'id',
     autoInc: true,
@@ -159,7 +178,44 @@ export function apply(ctx: Context, config: Config) {
       const getPlayer = await ctx.database.get('players_in_2048_playing', {guildId, userId})
       if (gameInfo.gameStatus !== '未开始') {
         if (getPlayer.length !== 0) {
-
+          const stateHtml = convertStateToHTML(gameInfo.progress)
+          const htmlGridContainer = generateGridHTML(gameInfo.gridSize);
+          const tilePositionHtml = generate2048TilePositionHtml(gameInfo.gridSize);
+          const gameContainerHtml = generate2048GameContainerHtml(gameInfo.gridSize);
+          const width = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
+          const height = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
+          const page = await ctx.puppeteer.page()
+          await page.goto(path.join(__dirname, 'emptyHtml.html'))
+          await page.setViewport({width, height})
+          const html = `${htmlHead}
+.container {
+    width: ${width - 50}px;
+    margin: 0 auto;
+}
+${gameContainerHtml}
+${tilePositionHtml}
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="heading">
+        <div class="scores-container">
+            <div class="score-container">${gameInfo.score}</div>
+            <div class="best-container">${gameInfo.best}</div>
+        </div>
+    </div>
+    <div class="game-container">
+        ${htmlGridContainer}
+        <div class="tile-container">
+            ${stateHtml}
+        </div>
+    </div>
+</div>
+</body>
+</html>`
+          await page.setContent(html, {waitUntil: 'load'})
+          const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
+          return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n而且你还在游戏里面呢~！继续玩吧~\n${h.image(imageBuffer, `image/${config.imageType}`)}`);
         }
         return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n下次记得早点加入游戏呀！`);
       }
@@ -292,15 +348,18 @@ export function apply(ctx: Context, config: Config) {
       return await sendMessage(session, `【@${username}】\n您要走了嘛...\n那就下次再来玩吧~再见！\n别担心~如果你投了钱，我已经还给你啦！\n您当前的余额为：【${userMonetary.value}】\n剩余玩家人数：${numberOfPlayers} 名！`);
     })
   // s* ks*
-  ctx.command('2048Game.开始', '开始游戏')
-    .action(async ({session}) => {
+  ctx.command('2048Game.开始 [gridSize:number]', '开始游戏')
+    .action(async ({session}, gridSize = config.defaultGridSize2048) => {
+      // 娱乐模式退钱给他们
+      let {guildId, userId, username, user, platform} = session;
+      if (typeof gridSize !== 'number' || gridSize < 4 || gridSize > 8) {
+        return await sendMessage(session, `【@${username}】\n请输入有效的数字，范围应在 4 到 8 之间。`);
+      }
       // 判断游戏是否已经开始，没开始才能开始 判断玩家是否足够1，没玩家不开始 没开始且有玩家，那就开始吧，修改游戏状态并返回一张游戏初始状态图
-      let {guildId, userId, username, user} = session;
       if (!guildId) {
         // 在这里为私聊场景赋予一个 guildId
         guildId = `privateChat_${userId}`;
       }
-      ;
       // 游戏记录表操作
       const gameInfo = await getGameInfo(guildId);
       if (gameInfo.gameStatus !== '未开始') {
@@ -310,14 +369,19 @@ export function apply(ctx: Context, config: Config) {
       if (numberOfPlayers <= 0) {
         return await sendMessage(session, `【@${username}】\n笨蛋，还没有玩家加入游戏呢！才不给你开始~略略略~`);
       }
-      const emptyGrid = createEmptyGrid(4)
+      const emptyGrid = createEmptyGrid(gridSize)
       const initialState = insertRandomElement(emptyGrid, 2);
-      await ctx.database.set('game_2048_records', {guildId}, {progress: initialState, gameStatus: '已开始'})
+      const htmlGridContainer = generateGridHTML(gridSize);
+      const tilePositionHtml = generate2048TilePositionHtml(gridSize);
+      const gameContainerHtml = generate2048GameContainerHtml(gridSize);
+      const width = 107 * gridSize + 15 * (gridSize + 1) + 50
+      const height = 107 * gridSize + 15 * (gridSize + 1) + 50
+      await ctx.database.set('game_2048_records', {guildId}, {progress: initialState, gameStatus: '已开始', gridSize})
       // console.log(JSON.stringify(initialState, null, 2));
       const stateHtml = convertStateToHTML(initialState)
       const page = await ctx.puppeteer.page()
       await page.goto(path.join(__dirname, 'emptyHtml.html'))
-      await page.setViewport({width: 550, height: 550})
+      await page.setViewport({width, height})
       // const zs = `        <div class="game-message game-over">
       //       <p>Game Over!</p>
       //       <div class="lower">
@@ -326,6 +390,13 @@ export function apply(ctx: Context, config: Config) {
       //       </div>
       //   </div>`
       const html = `${htmlHead}
+        .container {
+            width: ${width - 50}px;
+            margin: 0 auto;
+        }
+${gameContainerHtml}
+${tilePositionHtml}
+    </style>
 <body>
 <div class="container">
     <div class="heading">
@@ -346,7 +417,15 @@ export function apply(ctx: Context, config: Config) {
 </html>`
       await page.setContent(html, {waitUntil: 'load'})
       const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
-      await sendMessage(session, `游戏开始咯！\n您现在可以输入指令进行移动啦~\n也可以一次性输入多个操作呐！\n${h.image(imageBuffer, `image/${config.imageType}`)}`)
+      if (gridSize !== 4) {
+        const getUsers = await ctx.database.get('players_in_2048_playing', {})
+        for (const player of getUsers) {
+          const {userId, username, money} = player;
+          const uid = (await ctx.database.getUser(platform, userId)).id
+          await ctx.monetary.gain(uid, money)
+        }
+      }
+      await sendMessage(session, `游戏开始咯！${gridSize === 4 ? '\n该局游戏是经典模式会记分哦~' : `\n该局游戏是娱乐模式不记分哦~\n投入的钱已经还给你们惹！`}\n您现在可以输入指令进行移动啦~\n也可以一次性输入多个操作呐！\n${h.image(imageBuffer, `image/${config.imageType}`)}`)
     })
   // r* ck*
   ctx.command('2048Game.重置', '强制重置游戏')
@@ -395,37 +474,48 @@ export function apply(ctx: Context, config: Config) {
       for (let i = 0; i < operation.length; i++) {
         let currentChar = operation[i];
         const originalState = JSON.parse(JSON.stringify(state)) as Cell[][]; // 创建 state 的深层副本，以避免对原始数据的修改
-        if (currentChar === '上') {
+        if (currentChar === '上' || currentChar === 's' || currentChar === 'u') {
           // 执行上的操作
           await moveAndMergeUp(state, guildId)
-        } else if (currentChar === '下') {
+        } else if (currentChar === '下' || currentChar === 'x' || currentChar === 'd') {
           // 执行下的操作
           await moveAndMergeDown(state, guildId)
-        } else if (currentChar === '左') {
+        } else if (currentChar === '左' || currentChar === 'z' || currentChar === 'l') {
           // 执行左的操作
           await moveAndMergeLeft(state, guildId)
-        } else if (currentChar === '右') {
+        } else if (currentChar === '右' || currentChar === 'y' || currentChar === 'r') {
           // 执行右的操作
           await moveAndMergeRight(state, guildId)
         }
         if (!compareStates(originalState, state)) {
-          state = insertNewElement(state)
+          // console.log(Math.pow(2, gameInfo.gridSize - 4))
+          state = insertNewElements(state, Math.pow(2, gameInfo.gridSize - 4))
         }
       }
 
-      // console.log(`state:`, state)
-      const isWon = hasValue2048(state);
-      if (isWon) {
-        await ctx.database.set('game_2048_records', {guildId}, {isWon: true})
+      const theHighestNumber = findHighestValue(state)
+      // 经典模式才记分才能赢
+      let isWon: boolean = false
+      if (gameInfo.gridSize === 4) {
+        isWon = hasValue2048(state) || theHighestNumber > 2048;
+        if (isWon) {
+          await ctx.database.set('game_2048_records', {guildId}, {isWon: true})
+        }
       }
+
       // 如果游戏没有继续的情况下才判断赢
       const isOver = isGameOver(state)
       await ctx.database.set('game_2048_records', {guildId}, {progress: state})
       const newGameInfo = await getGameInfo(guildId);
       const stateHtml = convertStateToHTML(state)
+      const htmlGridContainer = generateGridHTML(gameInfo.gridSize);
+      const tilePositionHtml = generate2048TilePositionHtml(gameInfo.gridSize);
+      const gameContainerHtml = generate2048GameContainerHtml(gameInfo.gridSize);
+      const width = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
+      const height = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
       const page = await ctx.puppeteer.page()
       await page.goto(path.join(__dirname, 'emptyHtml.html'))
-      await page.setViewport({width: 550, height: 550})
+      await page.setViewport({width, height})
       const gameOverHtml: string = `
 <div class="game-message game-over">
     <p>你们输了!</p>
@@ -442,6 +532,13 @@ export function apply(ctx: Context, config: Config) {
     </div>
 </div>`
       const html = `${htmlHead}
+        .container {
+            width: ${width - 50}px;
+            margin: 0 auto;
+        }
+${gameContainerHtml}
+${tilePositionHtml}
+    </style>
 <body>
 <div class="container">
     <div class="heading">
@@ -466,47 +563,51 @@ export function apply(ctx: Context, config: Config) {
       const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
       const getUsers = await ctx.database.get('players_in_2048_playing', {guildId})
       const theBest = newGameInfo.best
-      const theHighestNumber = findHighestValue(state)
-      if (theHighestNumber > gameInfo.highestNumber) {
-        await ctx.database.set('game_2048_records', {guildId}, {highestNumber: theHighestNumber})
-      }
-      if (theBest > gameInfo.best) {
-        // 根据getUsers的所有元素生成一个新的json格式的数组
-        const bestPlayers: BestPlayer[] = getUsers.map((player) => {
-          const {userId, username} = player;
-          return {userId, username};
-        });
-        await ctx.database.set('game_2048_records', {guildId}, {bestPlayers})
-      }
-      for (const player of getUsers) {
-        const {userId, username, money} = player;
-        const [userRecord] = await ctx.database.get('player_2048_records', {userId})
-        if (userRecord.best < theBest) {
-          await ctx.database.set('player_2048_records', {userId}, {
-            best: theBest,
-          })
+      if (gameInfo.gridSize === 4) {
+        if (theHighestNumber > gameInfo.highestNumber) {
+          await ctx.database.set('game_2048_records', {guildId}, {highestNumber: theHighestNumber})
         }
-        if (userRecord.highestNumber < theHighestNumber) {
-          await ctx.database.set('player_2048_records', {userId}, {
-            highestNumber: theHighestNumber,
-          })
+        if (theBest > gameInfo.best) {
+          // 根据getUsers的所有元素生成一个新的json格式的数组
+          const bestPlayers: BestPlayer[] = getUsers.map((player) => {
+            const {userId, username} = player;
+            return {userId, username};
+          });
+          await ctx.database.set('game_2048_records', {guildId}, {bestPlayers})
+        }
+        for (const player of getUsers) {
+          const {userId, username, money} = player;
+          const [userRecord] = await ctx.database.get('player_2048_records', {userId})
+          if (userRecord.best < theBest) {
+            await ctx.database.set('player_2048_records', {userId}, {
+              best: theBest,
+            })
+          }
+          if (userRecord.highestNumber < theHighestNumber) {
+            await ctx.database.set('player_2048_records', {userId}, {
+              highestNumber: theHighestNumber,
+            })
+          }
         }
       }
+
       // 输了就结束
       if (!gameInfo.isKeepPlaying && isOver) {
         // 判断游戏是否赢 赢了之后询问该最后一次操作的玩家 是否继续 继续的话就不重置游戏 不继续的话重置游戏状态
         // 遍历 getUsers，对 money 不为 0 的玩家进行结算，为他们增加 money*2
-        for (const player of getUsers) {
-          const {userId, username, money} = player;
-          const [userRecord] = await ctx.database.get('player_2048_records', {userId})
-          await ctx.database.set('player_2048_records', {userId}, {
-            lose: userRecord.lose + 1,
-            moneyChange: userRecord.moneyChange - money,
-          })
+        if (gameInfo.gridSize === 4) {
+          for (const player of getUsers) {
+            const {userId, username, money} = player;
+            const [userRecord] = await ctx.database.get('player_2048_records', {userId})
+            await ctx.database.set('player_2048_records', {userId}, {
+              lose: userRecord.lose + 1,
+              moneyChange: userRecord.moneyChange - money,
+            })
+          }
         }
         // 重置游戏状态 发送游戏结束消息
         await reset2048Game(guildId)
-        return await sendMessage(session, `游戏结束！\n你们输惹...\n但没关系，下次一定能行！${h.image(imageBuffer, `imgae/${config.imageType}`)}`)
+        return await sendMessage(session, `游戏结束！\n你们输惹...\n但没关系，下次一定能行！${h.image(imageBuffer, `image/${config.imageType}`)}`)
       }
       if (gameInfo.isKeepPlaying && isOver) {
         for (const player of getUsers) {
@@ -543,7 +644,7 @@ export function apply(ctx: Context, config: Config) {
           }
         }
         await reset2048Game(guildId)
-        return await sendMessage(session, `游戏结束了哦！${h.image(imageBuffer, `imgae/${config.imageType}\n继续游戏后的结算结果如下：\n${settlementResult}`)}\n欢迎下次再来玩哦~`)
+        return await sendMessage(session, `游戏结束了哦！${h.image(imageBuffer, `image/${config.imageType}\n继续游戏后的结算结果如下：\n${settlementResult}`)}\n欢迎下次再来玩哦~`)
       }
       if (!gameInfo.isKeepPlaying && isWon) {
         // 判断游戏是否赢 赢了之后询问该最后一次操作的玩家 是否继续 继续的话就不重置游戏 不继续的话重置游戏状态
@@ -570,9 +671,9 @@ export function apply(ctx: Context, config: Config) {
 
         if (!config.enableContinuedPlayAfter2048Win) {
           await reset2048Game(guildId)
-          return await sendMessage(session, `2048！\n恭喜🎉你们赢了！\n${h.image(imageBuffer, `imgae/${config.imageType}`)}\n结算结果如下：\n${settlementResult}\n下次再见哦~`)
+          return await sendMessage(session, `2048！\n恭喜🎉你们赢了！\n${h.image(imageBuffer, `image/${config.imageType}`)}\n结算结果如下：\n${settlementResult}\n下次再见哦~`)
         } else {
-          await sendMessage(session, `2048！\n恭喜🎉你们赢了！\n${h.image(imageBuffer, `imgae/${config.imageType}`)}\n结算结果如下：\n${settlementResult}`)
+          await sendMessage(session, `2048！\n恭喜🎉你们赢了！\n${h.image(imageBuffer, `image/${config.imageType}`)}\n结算结果如下：\n${settlementResult}`)
         }
         await sendMessage(session, `【@${username}】\n作为赢得游戏的最后操作者！\n您有权决定是否继续游戏，请选择：
 【继续游戏】或【到此为止】
@@ -580,12 +681,21 @@ export function apply(ctx: Context, config: Config) {
 注意：不选择的话游戏会自动结束哦~`)
         let userInput = ''
         let inputNum = 0
+        let isChoose: boolean = false
         while (userInput !== '继续游戏' && userInput !== '到此为止' && inputNum < 3) {
           userInput = await session.prompt()
           ++inputNum
           if (userInput === '继续游戏') {
+            isChoose = true
             await ctx.database.set('game_2048_records', {guildId}, {isKeepPlaying: true})
             const html = `${htmlHead}
+        .container {
+            width: ${width - 50}px;
+            margin: 0 auto;
+        }
+${gameContainerHtml}
+${tilePositionHtml}
+    </style>
 <body>
 <div class="container">
     <div class="heading">
@@ -605,17 +715,21 @@ export function apply(ctx: Context, config: Config) {
 </html>`
             await page.setContent(html, {waitUntil: 'load'})
             const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
-            await sendMessage(session, `【@${username}】\n您选择了【继续游戏】！让我看看你们能走多远！\n祝你们接下来一路顺利呀~\n${h.image(imageBuffer, `imgae/${config.imageType}`)}`)
+            return await sendMessage(session, `【@${username}】\n您选择了【继续游戏】！让我看看你们能走多远！\n祝你们接下来一路顺利呀~\n${h.image(imageBuffer, `image/${config.imageType}`)}`)
           } else if (userInput === '到此为止') {
+            isChoose = true
             await reset2048Game(guildId)
-            await sendMessage(session, `【@${username}】\n您选择了【到此为止】！\n该局游戏结束咯~\n那就让我们下次再见吧~`)
+            return await sendMessage(session, `【@${username}】\n您选择了【到此为止】！\n该局游戏结束咯~\n那就让我们下次再见吧~`)
           }
         }
-        await reset2048Game(guildId)
-        await sendMessage(session, `最后操作者未做出选择，该局游戏结束咯~`)
+        if (!isChoose) {
+          await reset2048Game(guildId)
+          await sendMessage(session, `最后操作者未做出选择，该局游戏结束咯~`)
+        }
+
       }
       // 返回游戏状态图
-      return await sendMessage(session, `${h.image(imageBuffer, `imgae/${config.imageType}`)}`)
+      return await sendMessage(session, `${h.image(imageBuffer, `image/${config.imageType}`)}`)
     })
   // lszg*
   ctx.command('2048Game.历史最高', '查看历史最高记录')
@@ -656,15 +770,18 @@ ${bestPlayersList}`;
     })
 
   // r*
-  ctx.command('2048Game.排行榜', '查看排行榜相关指令')
-    .action(async ({session}) => {
+  ctx.command('2048Game.排行榜 [number:number]', '查看排行榜相关指令')
+    .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
+      if (typeof number !== 'number' || isNaN(number) || number < 0) {
+        return '请输入大于等于 0 的数字作为排行榜的参数。';
+      }
       const leaderboards = {
-        "1": "2048Game.排行榜.胜场",
-        "2": "2048Game.排行榜.输场",
-        "3": "2048Game.排行榜.最高分数",
-        "胜场排行榜": "2048Game.排行榜.胜场",
-        "输场排行榜": "2048Game.排行榜.输场",
-        "最高分数排行榜": "2048Game.排行榜.最高分数"
+        "1": `2048Game.排行榜.胜场 ${number}`,
+        "2": `2048Game.排行榜.输场 ${number}`,
+        "3": `2048Game.排行榜.最高分数 ${number}`,
+        "胜场排行榜": `2048Game.排行榜.胜场 ${number}`,
+        "输场排行榜": `2048Game.排行榜.输场 ${number}`,
+        "最高分数排行榜": `2048Game.排行榜.最高分数 ${number}`,
       };
 
       await sendMessage(session, `当前可查看排行榜如下：
@@ -685,22 +802,31 @@ ${bestPlayersList}`;
     });
 
 
-  ctx.command('2048Game.排行榜.胜场', '查看玩家胜场排行榜')
-    .action(async ({session, options}) => {
+  ctx.command('2048Game.排行榜.胜场 [number:number]', '查看玩家胜场排行榜')
+    .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
+      if (typeof number !== 'number' || isNaN(number) || number < 0) {
+        return '请输入大于等于 0 的数字作为排行榜的参数。';
+      }
       return await getLeaderboard(session, 'win', 'win', '玩家胜场排行榜');
     });
 
-  ctx.command('2048Game.排行榜.输场', '查看玩家输场排行榜')
-    .action(async ({session, options}) => {
+  ctx.command('2048Game.排行榜.输场 [number:number]', '查看玩家输场排行榜')
+    .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
+      if (typeof number !== 'number' || isNaN(number) || number < 0) {
+        return '请输入大于等于 0 的数字作为排行榜的参数。';
+      }
       return await getLeaderboard(session, 'lose', 'lose', '玩家输场排行榜');
     });
 
-  ctx.command('2048Game.排行榜.最高分数', '查看玩家最高分排行榜')
-    .action(async ({session, options}) => {
+  ctx.command('2048Game.排行榜.最高分数 [number:number]', '查看玩家最高分排行榜')
+    .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
+      if (typeof number !== 'number' || isNaN(number) || number < 0) {
+        return '请输入大于等于 0 的数字作为排行榜的参数。';
+      }
       return await getLeaderboard(session, 'best', 'best', '玩家最高分排行榜');
     });
 
-  ctx.command('2048Game.查询玩家记录 [targetUser:text]', '查询玩家游戏记录信息')
+  ctx.command('2048Game.查询玩家记录 [targetUser:text]', '查询玩家记录')
     .action(async ({session}, targetUser) => {
       let {guildId, userId, username} = session
       if (targetUser) {
@@ -976,7 +1102,83 @@ ${bestPlayersList}`;
 }
 
 // hs*
-function insertNewElement(state: Cell[][]): Cell[][] {
+
+function generate2048GameContainerHtml(gridSize: number): string {
+  const cellSize = 107;
+  const marginSize = 15;
+  const containerWidth = cellSize * gridSize + marginSize * (gridSize + 1);
+  const containerHeight = cellSize * gridSize + marginSize * (gridSize + 1);
+
+  const style = `
+    .game-container {
+      margin-top: 20px;
+      position: relative;
+      padding: 15px;
+      cursor: default;
+      -webkit-touch-callout: none;
+      -ms-touch-callout: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      -ms-touch-action: none;
+      user-select: none;
+      touch-action: none;
+      background: #bbada0;
+      border-radius: 6px;
+      width: ${containerWidth}px;
+      height: ${containerHeight}px;
+      -webkit-box-sizing: border-box;
+      -moz-box-sizing: border-box;
+      box-sizing: border-box;
+    }
+  `;
+
+  return style;
+}
+
+function generate2048TilePositionHtml(gridSize: number): string {
+  let styleString = "";
+
+  for (let i = 1; i <= gridSize; i++) {
+    for (let j = 1; j <= gridSize; j++) {
+      const transformX = (i - 1) * 121;
+      const transformY = (j - 1) * 121;
+      const className = `.tile.tile-position-${i}-${j}`;
+
+      const tileStyle = `
+                ${className} {
+                    -webkit-transform: translate(${transformX}px, ${transformY}px);
+                    -moz-transform: translate(${transformX}px, ${transformY}px);
+                    transform: translate(${transformX}px, ${transformY}px);
+                }
+            `;
+
+      styleString += tileStyle;
+    }
+  }
+
+  return styleString;
+}
+
+
+// 生成指定大小的网格的 HTML 元素
+function generateGridHTML(size: number): string {
+  let gridHTML = '<div class="grid-container">\n';
+
+  for (let i = 0; i < size; i++) {
+    gridHTML += '    <div class="grid-row">\n';
+    for (let j = 0; j < size; j++) {
+      gridHTML += '        <div class="grid-cell"></div>\n';
+    }
+    gridHTML += '    </div>\n';
+  }
+
+  gridHTML += '</div>';
+
+  return gridHTML;
+}
+
+function insertNewElements(state: Cell[][], elementCount: number): Cell[][] {
   const emptyCells: Position[] = [];
   // 找到所有空位置
   for (let i = 0; i < state.length; i++) {
@@ -992,22 +1194,31 @@ function insertNewElement(state: Cell[][]): Cell[][] {
     return state;
   }
 
-  // 从空位置中随机选取一个位置
-  const randomIndex = Math.floor(Math.random() * emptyCells.length);
-  const randomPosition = emptyCells[randomIndex];
+  // 根据elementCount确定要插入的元素个数
+  const insertCount = Math.min(elementCount, emptyCells.length);
 
-  // 随机生成新元素的值
-  const value = Math.random() < 0.9 ? 2 : 4;
-
-  // 在选定的位置插入新元素
+  // 从空位置中随机选取位置并插入新元素
   const newState = state.map(row => [...row]);
-  newState[randomPosition.x][randomPosition.y] = {
-    position: {x: randomPosition.x, y: randomPosition.y},
-    value: value
-  };
+  for (let k = 0; k < insertCount; k++) {
+    const randomIndex = Math.floor(Math.random() * emptyCells.length);
+    const randomPosition = emptyCells[randomIndex];
+
+    // 随机生成新元素的值
+    const value = Math.random() < 0.9 ? 2 : 4;
+
+    // 在选定的位置插入新元素
+    newState[randomPosition.x][randomPosition.y] = {
+      position: {x: randomPosition.x, y: randomPosition.y},
+      value: value
+    };
+
+    // 移除已经插入的位置，避免重复插入
+    emptyCells.splice(randomIndex, 1);
+  }
 
   return newState;
 }
+
 
 function compareStates(originalState: any, state: any): boolean {
   // 如果两个state的维度不同，则返回false
@@ -1141,7 +1352,7 @@ function insertRandomElement(grid: number[][], insertNumber: number): Cell[][] {
 function generateTileElement(cell) {
   if (cell !== null) {
     const {value, position} = cell;
-    const tileClass = `tile tile-${value > 2048 ? 'supper' : value} tile-position-${position.y + 1}-${position.x + 1}`;
+    const tileClass = `tile tile-${value > 2048 ? 'super' : value} tile-position-${position.y + 1}-${position.x + 1}`;
     const tileInner = `<div class="tile-inner">${value}</div>`;
     return `<div class="${tileClass}">${tileInner}</div>`;
   }
@@ -1347,11 +1558,6 @@ const htmlHead = `<html lang="zh">
             margin-bottom: 30px;
         }
 
-        .container {
-            width: 500px;
-            margin: 0 auto;
-        }
-
         /*@-webkit-keyframes fade-in {*/
         /*    0% {*/
         /*        opacity: 0;*/
@@ -1381,28 +1587,6 @@ const htmlHead = `<html lang="zh">
         /*        opacity: 1;*/
         /*    }*/
         /*}*/
-
-        .game-container {
-            margin-top: 20px;
-            position: relative;
-            padding: 15px;
-            cursor: default;
-            -webkit-touch-callout: none;
-            -ms-touch-callout: none;
-            -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
-            -ms-touch-action: none;
-            user-select: none;
-            touch-action: none;
-            background: #bbada0;
-            border-radius: 6px;
-            width: 500px;
-            height: 500px;
-            -webkit-box-sizing: border-box;
-            -moz-box-sizing: border-box;
-            box-sizing: border-box;
-        }
 
         .game-container .game-message {
             display: none;
@@ -1505,102 +1689,6 @@ const htmlHead = `<html lang="zh">
             width: 107px;
             height: 107px;
             line-height: 107px;
-        }
-
-        .tile.tile-position-1-1 {
-            -webkit-transform: translate(0px, 0px);
-            -moz-transform: translate(0px, 0px);
-            transform: translate(0px, 0px);
-        }
-
-        .tile.tile-position-1-2 {
-            -webkit-transform: translate(0px, 121px);
-            -moz-transform: translate(0px, 121px);
-            transform: translate(0px, 121px);
-        }
-
-        .tile.tile-position-1-3 {
-            -webkit-transform: translate(0px, 242px);
-            -moz-transform: translate(0px, 242px);
-            transform: translate(0px, 242px);
-        }
-
-        .tile.tile-position-1-4 {
-            -webkit-transform: translate(0px, 363px);
-            -moz-transform: translate(0px, 363px);
-            transform: translate(0px, 363px);
-        }
-
-        .tile.tile-position-2-1 {
-            -webkit-transform: translate(121px, 0px);
-            -moz-transform: translate(121px, 0px);
-            transform: translate(121px, 0px);
-        }
-
-        .tile.tile-position-2-2 {
-            -webkit-transform: translate(121px, 121px);
-            -moz-transform: translate(121px, 121px);
-            transform: translate(121px, 121px);
-        }
-
-        .tile.tile-position-2-3 {
-            -webkit-transform: translate(121px, 242px);
-            -moz-transform: translate(121px, 242px);
-            transform: translate(121px, 242px);
-        }
-
-        .tile.tile-position-2-4 {
-            -webkit-transform: translate(121px, 363px);
-            -moz-transform: translate(121px, 363px);
-            transform: translate(121px, 363px);
-        }
-
-        .tile.tile-position-3-1 {
-            -webkit-transform: translate(242px, 0px);
-            -moz-transform: translate(242px, 0px);
-            transform: translate(242px, 0px);
-        }
-
-        .tile.tile-position-3-2 {
-            -webkit-transform: translate(242px, 121px);
-            -moz-transform: translate(242px, 121px);
-            transform: translate(242px, 121px);
-        }
-
-        .tile.tile-position-3-3 {
-            -webkit-transform: translate(242px, 242px);
-            -moz-transform: translate(242px, 242px);
-            transform: translate(242px, 242px);
-        }
-
-        .tile.tile-position-3-4 {
-            -webkit-transform: translate(242px, 363px);
-            -moz-transform: translate(242px, 363px);
-            transform: translate(242px, 363px);
-        }
-
-        .tile.tile-position-4-1 {
-            -webkit-transform: translate(363px, 0px);
-            -moz-transform: translate(363px, 0px);
-            transform: translate(363px, 0px);
-        }
-
-        .tile.tile-position-4-2 {
-            -webkit-transform: translate(363px, 121px);
-            -moz-transform: translate(363px, 121px);
-            transform: translate(363px, 121px);
-        }
-
-        .tile.tile-position-4-3 {
-            -webkit-transform: translate(363px, 242px);
-            -moz-transform: translate(363px, 242px);
-            transform: translate(363px, 242px);
-        }
-
-        .tile.tile-position-4-4 {
-            -webkit-transform: translate(363px, 363px);
-            -moz-transform: translate(363px, 363px);
-            transform: translate(363px, 363px);
         }
 
         .tile {
@@ -2475,33 +2563,4 @@ const htmlHead = `<html lang="zh">
         right: 0px;
         cursor: pointer;
     }
-
-
-    </style>
-</head>`
-const htmlGridContainer = `        <div class="grid-container">
-            <div class="grid-row">
-                <div class="grid-cell"></div>
-                <div class="grid-cell"></div>
-                <div class="grid-cell"></div>
-                <div class="grid-cell"></div>
-            </div>
-            <div class="grid-row">
-                <div class="grid-cell"></div>
-                <div class="grid-cell"></div>
-                <div class="grid-cell"></div>
-                <div class="grid-cell"></div>
-            </div>
-            <div class="grid-row">
-                <div class="grid-cell"></div>
-                <div class="grid-cell"></div>
-                <div class="grid-cell"></div>
-                <div class="grid-cell"></div>
-            </div>
-            <div class="grid-row">
-                <div class="grid-cell"></div>
-                <div class="grid-cell"></div>
-                <div class="grid-cell"></div>
-                <div class="grid-cell"></div>
-            </div>
-        </div>`
+`
