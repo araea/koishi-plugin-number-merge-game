@@ -21,7 +21,7 @@ export const usage = `## 🌈 使用
 - \`2048Game.重置\`：强制重置游戏，不会退还投入的货币。
 - \`2048Game.移动 [operation:text]\`：进行移动操作，参数为方向，可选 \`上/s/u\`，\`下/x/d\`，\`左/z/l\`，\`右/y/r\`，也可以一次输入多个方向。
 - \`2048Game.历史最高\`：查看历史最高记录，可选参数 \`-a\` 跨群查询。
-- \`2048Game.排行榜 [number:number]\`：查看排行榜相关指令，可选 \`胜场\`，\`输场\`，\`最高分数\`。
+- \`2048Game.排行榜 [number:number]\`：查看排行榜相关指令，可选 \`胜场\`，\`输场\`，\`最高分数\`，\`最高数字\`，\`损益\`。
 - \`2048Game.查询玩家记录 [targetUser:text]\`：查询玩家游戏记录信息，可选参数为目标玩家的 at 信息，没有参数则默认为指令发送者。`
 
 export interface Config {
@@ -802,7 +802,7 @@ ${bestPlayersList}`;
       // .action
     })
 
-  // r*
+  // r* phb*
   ctx.command('2048Game.排行榜 [number:number]', '查看排行榜相关指令')
     .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
       if (typeof number !== 'number' || isNaN(number) || number < 0) {
@@ -812,15 +812,21 @@ ${bestPlayersList}`;
         "1": `2048Game.排行榜.胜场 ${number}`,
         "2": `2048Game.排行榜.输场 ${number}`,
         "3": `2048Game.排行榜.最高分数 ${number}`,
+        "4": `2048Game.排行榜.最高数字 ${number}`,
+        "5": `2048Game.排行榜.损益 ${number}`,
         "胜场排行榜": `2048Game.排行榜.胜场 ${number}`,
         "输场排行榜": `2048Game.排行榜.输场 ${number}`,
         "最高分数排行榜": `2048Game.排行榜.最高分数 ${number}`,
+        "最高数字排行榜": `2048Game.排行榜.最高数字 ${number}`,
+        "损益排行榜": `2048Game.排行榜.损益 ${number}`,
       };
 
       await sendMessage(session, `当前可查看排行榜如下：
 1. 胜场排行榜
 2. 输场排行榜
 3. 最高分数排行榜
+4. 最高数字排行榜
+5. 损益排行榜
 请输入想要查看的【排行榜名】或【序号】：`);
 
       const userInput = await session.prompt();
@@ -859,6 +865,22 @@ ${bestPlayersList}`;
       return await getLeaderboard(session, 'best', 'best', '玩家最高分排行榜');
     });
 
+  ctx.command('2048Game.排行榜.最高数字 [number:number]', '查看玩家最高数字排行榜')
+    .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
+      if (typeof number !== 'number' || isNaN(number) || number < 0) {
+        return '请输入大于等于 0 的数字作为排行榜的参数。';
+      }
+      return await getLeaderboard(session, 'highestNumber', 'highestNumber', '玩家最高数字排行榜');
+    });
+
+  ctx.command('2048Game.排行榜.损益 [number:number]', '查看玩家损益排行榜')
+    .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
+      if (typeof number !== 'number' || isNaN(number) || number < 0) {
+        return '请输入大于等于 0 的数字作为排行榜的参数。';
+      }
+      return await getLeaderboard(session, 'moneyChange', 'moneyChange', '玩家损益排行榜');
+    });
+  // cx*
   ctx.command('2048Game.查询玩家记录 [targetUser:text]', '查询玩家记录')
     .action(async ({session}, targetUser) => {
       let {guildId, userId, username} = session
@@ -902,7 +924,7 @@ ${bestPlayersList}`;
 
     let result = `${title}：\n`;
     topPlayers.forEach((player, index) => {
-      result += `${index + 1}. ${player.username}：${player[sortField]} ${type === 'best' ? '分' : '次'}\n`
+      result += `${index + 1}. ${player.username}：${player[sortField]} ${(type === 'best') ? '分' : (type === 'moneyChange') ? '点' : (type === 'highestNumber') ? '' : '次'}\n`
     })
     return await sendMessage(session, result);
   }
