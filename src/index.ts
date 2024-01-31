@@ -188,6 +188,13 @@ export function apply(ctx: Context, config: Config) {
           await page.goto(path.join(__dirname, 'emptyHtml.html'))
           await page.setViewport({width, height})
           const html = `${htmlHead}
+.game-container .game-message p {
+            font-size: 60px;
+            font-weight: bold;
+            height: 60px;
+            line-height: 60px;
+            margin-top: ${(width - 50) / 2 - 28}px;
+        }
 .container {
     width: ${width - 50}px;
     margin: 0 auto;
@@ -390,6 +397,13 @@ ${tilePositionHtml}
       //       </div>
       //   </div>`
       const html = `${htmlHead}
+.game-container .game-message p {
+            font-size: 60px;
+            font-weight: bold;
+            height: 60px;
+            line-height: 60px;
+            margin-top: ${(width - 50) / 2 - 28}px;
+        }
         .container {
             width: ${width - 50}px;
             margin: 0 auto;
@@ -536,6 +550,13 @@ ${tilePositionHtml}
     </div>
 </div>`
       const html = `${htmlHead}
+.game-container .game-message p {
+            font-size: 60px;
+            font-weight: bold;
+            height: 60px;
+            line-height: 60px;
+            margin-top: ${(width - 50) / 2 - 28}px;
+        }
         .container {
             width: ${width - 50}px;
             margin: 0 auto;
@@ -693,10 +714,18 @@ ${tilePositionHtml}
             isChoose = true
             await ctx.database.set('game_2048_records', {guildId}, {isKeepPlaying: true})
             const html = `${htmlHead}
+.game-container .game-message p {
+            font-size: 60px;
+            font-weight: bold;
+            height: 60px;
+            line-height: 60px;
+            margin-top: ${(width - 50) / 2 - 28}px;
+        }
         .container {
             width: ${width - 50}px;
             margin: 0 auto;
         }
+
 ${gameContainerHtml}
 ${tilePositionHtml}
     </style>
@@ -1608,14 +1637,6 @@ const htmlHead = `<html lang="zh">
             -webkit-animation-fill-mode: both;
             -moz-animation-fill-mode: both;
             animation-fill-mode: both;
-        }
-
-        .game-container .game-message p {
-            font-size: 60px;
-            font-weight: bold;
-            height: 60px;
-            line-height: 60px;
-            margin-top: 222px;
         }
 
         .game-container .game-message .lower {
