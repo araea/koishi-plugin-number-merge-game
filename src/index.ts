@@ -425,7 +425,11 @@ ${tilePositionHtml}
           await ctx.monetary.gain(uid, money)
         }
       }
-      await sendMessage(session, `游戏开始咯！${gridSize === 4 ? '\n该局游戏是经典模式会记分哦~' : `\n该局游戏是娱乐模式不记分哦~\n投入的钱已经还给你们惹！`}\n您现在可以输入指令进行移动啦~\n指令的参数可选：\`上/s/u\`\n\`下/x/d\`\n\`左/z/l\`\n\`右/y/r\`\n可以一次性输入多个参数哦~\n别忘了加上移动指令前缀呐！\n${h.image(imageBuffer, `image/${config.imageType}`)}指令使用示例：\n【移动指令名】 上下zysx左右lrud`)
+      const gameModeMessage = gridSize === 4 ? '该局游戏是经典模式会记分哦~' : '该局游戏是娱乐模式不记分哦~\n投入的钱已经还给你们惹！';
+
+      const instructionMessage = `您现在可以输入指令进行移动啦~\n${h.image(imageBuffer, `image/${config.imageType}`)}\n可选指令参数有：\n【上/s/u】\n【下/x/d】\n【左/z/l】\n【右/y/r】\n可以一次性输入多个参数哦~\n指令使用示例：\n【移动指令名】 上下左右sxzyudlr`;
+
+      await sendMessage(session, `游戏开始咯！\n${gameModeMessage}\n${instructionMessage}`);
     })
   // r* ck*
   ctx.command('2048Game.重置', '强制重置游戏')
