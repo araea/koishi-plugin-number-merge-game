@@ -918,7 +918,7 @@ ${bestPlayersList}`;
               state[currentRow - 1][col].value *= 2;
               const gameInfo = await getGameInfo(guildId)
               const score = gameInfo.score + state[currentRow - 1][col].value
-              if (score > gameInfo.best) {
+              if (score > gameInfo.best && gameInfo.gridSize === 4) {
                 await ctx.database.set('game_2048_records', {guildId}, {score, best: score})
               } else {
                 await ctx.database.set('game_2048_records', {guildId}, {score})
@@ -962,7 +962,7 @@ ${bestPlayersList}`;
 
               const gameInfo = await getGameInfo(guildId)
               const score = gameInfo.score + state[currentRow + 1][col].value
-              if (score > gameInfo.best) {
+              if (score > gameInfo.best && gameInfo.gridSize === 4) {
                 await ctx.database.set('game_2048_records', {guildId}, {score, best: score})
               } else {
                 await ctx.database.set('game_2048_records', {guildId}, {score})
@@ -1007,7 +1007,7 @@ ${bestPlayersList}`;
 
               const gameInfo = await getGameInfo(guildId)
               const score = gameInfo.score + state[row][currentCol - 1].value
-              if (score > gameInfo.best) {
+              if (score > gameInfo.best && gameInfo.gridSize === 4) {
                 await ctx.database.set('game_2048_records', {guildId}, {score, best: score})
               } else {
                 await ctx.database.set('game_2048_records', {guildId}, {score})
@@ -1052,7 +1052,7 @@ ${bestPlayersList}`;
 
               const gameInfo = await getGameInfo(guildId)
               const score = gameInfo.score + state[row][currentCol + 1].value
-              if (score > gameInfo.best) {
+              if (score > gameInfo.best && gameInfo.gridSize === 4) {
                 await ctx.database.set('game_2048_records', {guildId}, {score, best: score})
               } else {
                 await ctx.database.set('game_2048_records', {guildId}, {score})
