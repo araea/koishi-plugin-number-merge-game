@@ -167,12 +167,20 @@ export function apply(ctx: Context, config: Config) {
       // 玩家记录表操作
       const userRecord = await ctx.database.get('player_2048_records', {userId});
       if (userRecord.length === 0) {
-        await ctx.database.create('player_2048_records', {userId, username, best: 0, win: 0, lose: 0, moneyChange: 0});
+        await ctx.database.create('player_2048_records', {
+          userId,
+          username,
+          best: 0,
+          win: 0,
+          lose: 0,
+          moneyChange: 0,
+          highestNumber: 0
+        })
       } else if (username !== userRecord[0].username) {
         await ctx.database.set('player_2048_records', {userId}, {username});
       }
 
-      // 判断游戏是否已经开始，若开始，则不给你加入。 再输出一张当前游戏状态图片 // db*
+      // 判断游戏是否已经开始，若开始，则不给你加入。 再输出一张当前游戏状态图片
       // 游戏记录表操作
       const gameInfo = await getGameInfo(guildId);
       const getPlayer = await ctx.database.get('players_in_2048_playing', {guildId, userId})
@@ -185,7 +193,8 @@ export function apply(ctx: Context, config: Config) {
           const width = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
           const height = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
           const page = await ctx.puppeteer.page()
-          await page.goto(path.join(__dirname, 'emptyHtml.html'))
+          const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
+      await page.goto('file://' + filePath);
           await page.setViewport({width, height})
           const html = `${htmlHead}
 .game-container .game-message p {
@@ -387,7 +396,8 @@ ${tilePositionHtml}
       // console.log(JSON.stringify(initialState, null, 2));
       const stateHtml = convertStateToHTML(initialState)
       const page = await ctx.puppeteer.page()
-      await page.goto(path.join(__dirname, 'emptyHtml.html'))
+      const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
+      await page.goto('file://' + filePath);
       await page.setViewport({width, height})
       // const zs = `        <div class="game-message game-over">
       //       <p>Game Over!</p>
@@ -532,7 +542,8 @@ ${tilePositionHtml}
       const width = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
       const height = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
       const page = await ctx.puppeteer.page()
-      await page.goto(path.join(__dirname, 'emptyHtml.html'))
+      const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
+      await page.goto('file://' + filePath);
       await page.setViewport({width, height})
       const gameOverHtml: string = `
 <div class="game-message game-over">
@@ -839,7 +850,6 @@ ${bestPlayersList}`;
         return sendMessage(session, `无效的输入。`);
       }
     });
-
 
   ctx.command('2048Game.排行榜.胜场 [number:number]', '查看玩家胜场排行榜')
     .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
