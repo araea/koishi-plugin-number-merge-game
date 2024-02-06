@@ -47,7 +47,6 @@ export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
     rewardMultiplier2048Win: Schema.number().min(0).default(2).description(`达成 2048 赢了之后可得到的货币倍数。`),
     defaultGridSize2048: Schema.number().min(4).max(8).default(4).description(`开始 2048 游戏时默认的游戏网格大小，范围 4~8，值为 4 时为经典模式，才会记分和奖励。`),
-
   }).description('2048 游戏奖励设置'),
   Schema.object({
     imageType: Schema.union(['png', 'jpeg', 'webp']).default('png').description(`发送的图片类型。`),
@@ -82,7 +81,7 @@ interface Monetary {
 // 主控游戏数据表 game_2048_records ： id 群组id 游戏状态 当前游戏的进度 （json） 分数 历史最高分数 创造历史最高时参与的玩家名和玩家id
 export interface GameRecord {
   id: number
-  guildId: string
+  channelId: string
   gameStatus: string
   progress: any[][] // json
   score: number
@@ -97,7 +96,7 @@ export interface GameRecord {
 // 游戏中玩家数据表 players_in_2048_playing ： id 群组id 用户id 用户名 money
 export interface GamingPlayer {
   id: number
-  guildId: string
+  channelId: string
   userId: string
   username: string
   money: number
@@ -123,7 +122,7 @@ interface BestPlayer {
 export function apply(ctx: Context, config: Config) {
   ctx.model.extend('game_2048_records', {
     id: 'unsigned',
-    guildId: 'string',
+    channelId: 'string',
     best: 'unsigned',
     gameStatus: {type: 'string', initial: '未开始'},
     score: 'unsigned',
@@ -148,7 +147,7 @@ export function apply(ctx: Context, config: Config) {
     id: 'unsigned',
     userId: 'string',
     username: 'string',
-    guildId: 'string',
+    channelId: 'string',
     money: 'unsigned',
   }, {
     primary: 'id',
@@ -170,12 +169,12 @@ export function apply(ctx: Context, config: Config) {
 
   // zjj*
   ctx.middleware(async (session, next) => {
-    const {guildId, content} = session;
+    const {channelId, content} = session;
     if (!config.isMobileCommandMiddlewarePrefixFree) {
       return await next();
     }
 
-    const gameInfo = await getGameInfo(guildId);
+    const gameInfo = await getGameInfo(channelId);
     if (gameInfo.gameStatus === '未开始') {
       return await next();
     }
@@ -196,18 +195,18 @@ export function apply(ctx: Context, config: Config) {
   ctx.command('2048Game.加入 [money:number]', '加入游戏')
     .action(async ({session}, money = 0) => {
       // 如果玩家的玩家记录表中的用户名和当前的对不上，就为他更新一下名字~ 如果他还不在玩家记录表里，那就创建一个咯
-      let {guildId, userId, username, user} = session;
-      if (!guildId) {
-        // 在这里为私聊场景赋予一个 guildId
-        guildId = `privateChat_${userId}`;
+      let {channelId, userId, username, user} = session;
+      if (!channelId) {
+        // 在这里为私聊场景赋予一个 channelId
+        channelId = `privateChat_${userId}`;
       }
       // 玩家记录表操作(更新用户名)
       await updateUserRecord(userId, username)
 
       // 判断游戏是否已经开始，若开始，则不给你加入。 再输出一张当前游戏状态图片
       // 游戏记录表操作
-      const gameInfo = await getGameInfo(guildId);
-      const getPlayer = await ctx.database.get('players_in_2048_playing', {guildId, userId})
+      const gameInfo = await getGameInfo(channelId);
+      const getPlayer = await ctx.database.get('players_in_2048_playing', {channelId, userId})
       if (gameInfo.gameStatus !== '未开始') {
         if (getPlayer.length !== 0) {
           const stateHtml = convertStateToHTML(gameInfo.progress)
@@ -263,7 +262,7 @@ ${tilePositionHtml}
 
       // 历史最高的玩家也要为他们更新用户名
       const bestPlayers = gameInfo.bestPlayers
-      await updateBestPlayerUsername(bestPlayers, guildId, userId, username)
+      await updateBestPlayerUsername(bestPlayers, channelId, userId, username)
 
       // 判断该玩家是否已经加入游戏，若已经加入，则提醒并为其修改投入货币的金额 （如果有正确输入的话）
       // 判断该玩家有没有加入过游戏
@@ -316,14 +315,14 @@ ${tilePositionHtml}
       await ctx.monetary.cost(uid, money);
       // 如果是修改金额就先退钱，修改金额，不是的话就创建玩家
       if (isChange) {
-        await ctx.database.set('players_in_2048_playing', {guildId, userId}, {money})
+        await ctx.database.set('players_in_2048_playing', {channelId, userId}, {money})
       } else {
         // 在游玩表中创建玩家
-        await ctx.database.create('players_in_2048_playing', {guildId, userId, username, money});
+        await ctx.database.create('players_in_2048_playing', {channelId, userId, username, money});
       }
 
       // 获取当前玩家数量
-      const numberOfPlayers = (await ctx.database.get('players_in_2048_playing', {guildId})).length;
+      const numberOfPlayers = (await ctx.database.get('players_in_2048_playing', {channelId})).length;
       const stringWhenMoneyIs0 = `\n这个小游戏可以赚钱哦~\n当前倍率为：【${config.rewardMultiplier2048Win}】倍！
 想要投入金额的话...
 那就带上投入的金额数字！
@@ -353,17 +352,17 @@ ${tilePositionHtml}
     .action(async ({session}) => {
       // 判断游戏是否已经开始，开始就无法退出 没开始判断玩家在不在游戏中，不在也无法退出 如果在游戏中，帮他退出，如果他投入钱了，那就把钱还给他
       // 判断游戏是否已经开始，若开始，则不给你退出。
-      let {guildId, userId, username, user} = session;
-      if (!guildId) {
-        // 在这里为私聊场景赋予一个 guildId
-        guildId = `privateChat_${userId}`;
+      let {channelId, userId, username, user} = session;
+      if (!channelId) {
+        // 在这里为私聊场景赋予一个 channelId
+        channelId = `privateChat_${userId}`;
       }
       // 游戏记录表操作
-      const gameInfo = await getGameInfo(guildId);
+      const gameInfo = await getGameInfo(channelId);
       if (gameInfo.gameStatus !== '未开始') {
         return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n不许逃跑！要认真对待呐~`);
       }
-      const getPlayer = await ctx.database.get('players_in_2048_playing', {guildId, userId})
+      const getPlayer = await ctx.database.get('players_in_2048_playing', {channelId, userId})
       if (getPlayer.length === 0) {
         return await sendMessage(session, `【@${username}】\n诶呀，你都没加入游戏！那你可退出不了~`);
       }
@@ -371,31 +370,31 @@ ${tilePositionHtml}
       // @ts-ignore
       const uid = user.id;
       await ctx.monetary.gain(uid, getPlayer[0].money);
-      await ctx.database.remove('players_in_2048_playing', {guildId, userId})
+      await ctx.database.remove('players_in_2048_playing', {channelId, userId})
       const getUserMonetary = await ctx.database.get('monetary', {uid});
       const userMonetary = getUserMonetary[0]
-      const numberOfPlayers = (await ctx.database.get('players_in_2048_playing', {guildId})).length;
+      const numberOfPlayers = (await ctx.database.get('players_in_2048_playing', {channelId})).length;
       return await sendMessage(session, `【@${username}】\n您要走了嘛...\n那就下次再来玩吧~再见！\n别担心~如果你投了钱，我已经还给你啦！\n您当前的余额为：【${userMonetary.value}】\n剩余玩家人数：${numberOfPlayers} 名！`);
     })
   // s* ks*
   ctx.command('2048Game.开始 [gridSize:number]', '开始游戏')
     .action(async ({session}, gridSize = config.defaultGridSize2048) => {
       // 娱乐模式退钱给他们
-      let {guildId, userId, username, user, platform} = session;
+      let {channelId, userId, username, user, platform} = session;
       if (typeof gridSize !== 'number' || gridSize < 4 || gridSize > 8) {
         return await sendMessage(session, `【@${username}】\n请输入有效的数字，范围应在 4 到 8 之间。`);
       }
       // 判断游戏是否已经开始，没开始才能开始 判断玩家是否足够1，没玩家不开始 没开始且有玩家，那就开始吧，修改游戏状态并返回一张游戏初始状态图
-      if (!guildId) {
-        // 在这里为私聊场景赋予一个 guildId
-        guildId = `privateChat_${userId}`;
+      if (!channelId) {
+        // 在这里为私聊场景赋予一个 channelId
+        channelId = `privateChat_${userId}`;
       }
       // 游戏记录表操作
-      const gameInfo = await getGameInfo(guildId);
+      const gameInfo = await getGameInfo(channelId);
       if (gameInfo.gameStatus !== '未开始') {
         return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n难道你想开始两次？\n那可不行！`);
       }
-      const numberOfPlayers = (await ctx.database.get('players_in_2048_playing', {guildId})).length;
+      const numberOfPlayers = (await ctx.database.get('players_in_2048_playing', {channelId})).length;
       if (numberOfPlayers <= 0) {
         return await sendMessage(session, `【@${username}】\n笨蛋，还没有玩家加入游戏呢！才不给你开始~略略略~`);
       }
@@ -406,7 +405,7 @@ ${tilePositionHtml}
       const gameContainerHtml = generate2048GameContainerHtml(gridSize);
       const width = 107 * gridSize + 15 * (gridSize + 1) + 50
       const height = 107 * gridSize + 15 * (gridSize + 1) + 50
-      await ctx.database.set('game_2048_records', {guildId}, {progress: initialState, gameStatus: '已开始', gridSize})
+      await ctx.database.set('game_2048_records', {channelId}, {progress: initialState, gameStatus: '已开始', gridSize})
       // console.log(JSON.stringify(initialState, null, 2));
       const stateHtml = convertStateToHTML(initialState)
       const page = await ctx.puppeteer.page()
@@ -474,44 +473,44 @@ ${tilePositionHtml}
   ctx.command('2048Game.重置', '强制重置游戏')
     .action(async ({session}) => {
       // 游戏开了再重开 清空游戏中玩家 重置游戏状态 不退钱
-      let {guildId, userId, username, user} = session;
-      if (!guildId) {
-        // 在这里为私聊场景赋予一个 guildId
-        guildId = `privateChat_${userId}`;
+      let {channelId, userId, username, user} = session;
+      if (!channelId) {
+        // 在这里为私聊场景赋予一个 channelId
+        channelId = `privateChat_${userId}`;
       }
       // 游戏记录表操作
-      const gameInfo = await getGameInfo(guildId);
+      const gameInfo = await getGameInfo(channelId);
       if (gameInfo.gameStatus === '未开始') {
         return await sendMessage(session, `【@${username}】\n游戏还没开始呢...\n好像不用重置吧~`);
       }
-      await reset2048Game(guildId)
+      await reset2048Game(channelId)
       return await sendMessage(session, `【@${username}】\n既然你想要重置游戏的话...\n那就重来咯~不过呢...\n投的钱都归我咯~！`);
     })
   // yd*
   ctx.command('2048Game.移动 [operation:text]', '进行移动操作')
     .action(async ({session}, operation) => {
       // 游戏是开始的 玩家是加入的 操作输入是正确的 操作是可行的
-      let {guildId, userId, username, user, platform} = session;
-      if (!guildId) {
-        // 在这里为私聊场景赋予一个 guildId
-        guildId = `privateChat_${userId}`;
+      let {channelId, userId, username, user, platform} = session;
+      if (!channelId) {
+        // 在这里为私聊场景赋予一个 channelId
+        channelId = `privateChat_${userId}`;
       }
-      const gameInfo = await getGameInfo(guildId);
+      const gameInfo = await getGameInfo(channelId);
       if (gameInfo.isWon && !gameInfo.isKeepPlaying) {
         return await sendMessage(session, `【@${username}】\n你们已经赢了哦！\n等待最后操作者做出选择吧~`);
       }
       if (gameInfo.gameStatus === '未开始') {
         return await sendMessage(session, `【@${username}】\n游戏还没开始呢~`);
       }
-      let getPlayer = await ctx.database.get('players_in_2048_playing', {guildId, userId})
+      let getPlayer = await ctx.database.get('players_in_2048_playing', {channelId, userId})
       if (getPlayer.length === 0) {
         if (config.allowNonPlayersToMove2048Tiles) {
           // 新增该玩家，并更新 getPlayer
           await updateUserRecord(userId, username)
-          await updateBestPlayerUsername(gameInfo.bestPlayers, guildId, userId, username)
+          await updateBestPlayerUsername(gameInfo.bestPlayers, channelId, userId, username)
           // 在游玩表中创建玩家
-          await ctx.database.create('players_in_2048_playing', {guildId, userId, username, money: 0});
-          // getPlayer = await ctx.database.get('players_in_2048_playing', {guildId, userId})
+          await ctx.database.create('players_in_2048_playing', {channelId, userId, username, money: 0});
+          // getPlayer = await ctx.database.get('players_in_2048_playing', {channelId, userId})
         } else {
           return await sendMessage(session, `【@${username}】\n没加入游戏的话~移动不了哦！`);
         }
@@ -528,16 +527,16 @@ ${tilePositionHtml}
         let currentChar = operation[i];
         if (currentChar === '上' || currentChar === 's' || currentChar === 'u') {
           // 执行上的操作
-          await moveAndMergeUp(state, guildId)
+          await moveAndMergeUp(state, channelId)
         } else if (currentChar === '下' || currentChar === 'x' || currentChar === 'd') {
           // 执行下的操作
-          await moveAndMergeDown(state, guildId)
+          await moveAndMergeDown(state, channelId)
         } else if (currentChar === '左' || currentChar === 'z' || currentChar === 'l') {
           // 执行左的操作
-          await moveAndMergeLeft(state, guildId)
+          await moveAndMergeLeft(state, channelId)
         } else if (currentChar === '右' || currentChar === 'y' || currentChar === 'r') {
           // 执行右的操作
-          await moveAndMergeRight(state, guildId)
+          await moveAndMergeRight(state, channelId)
         }
         if (!compareStates(originalState, state)) {
           // console.log(Math.pow(2, gameInfo.gridSize - 4))
@@ -550,14 +549,14 @@ ${tilePositionHtml}
       if (gameInfo.gridSize === 4) {
         isWon = hasValue2048(state) || theHighestNumber > 2048;
         if (isWon) {
-          await ctx.database.set('game_2048_records', {guildId}, {isWon: true})
+          await ctx.database.set('game_2048_records', {channelId}, {isWon: true})
         }
       }
 
       // 如果游戏没有继续的情况下才判断赢
       const isOver = isGameOver(state)
-      await ctx.database.set('game_2048_records', {guildId}, {progress: state})
-      const newGameInfo = await getGameInfo(guildId);
+      await ctx.database.set('game_2048_records', {channelId}, {progress: state})
+      const newGameInfo = await getGameInfo(channelId);
       const stateHtml = convertStateToHTML(state)
       const htmlGridContainer = generateGridHTML(gameInfo.gridSize);
       const tilePositionHtml = generate2048TilePositionHtml(gameInfo.gridSize);
@@ -621,11 +620,11 @@ ${tilePositionHtml}
       await page.setContent(html, {waitUntil: 'load'})
       const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
       await page.close()
-      const getUsers = await ctx.database.get('players_in_2048_playing', {guildId})
+      const getUsers = await ctx.database.get('players_in_2048_playing', {channelId})
       const theBest = newGameInfo.best
       if (gameInfo.gridSize === 4) {
         if (theHighestNumber > gameInfo.highestNumber) {
-          await ctx.database.set('game_2048_records', {guildId}, {highestNumber: theHighestNumber})
+          await ctx.database.set('game_2048_records', {channelId}, {highestNumber: theHighestNumber})
         }
         if (theBest > gameInfo.best) {
           // 根据getUsers的所有元素生成一个新的json格式的数组
@@ -633,7 +632,7 @@ ${tilePositionHtml}
             const {userId, username} = player;
             return {userId, username};
           });
-          await ctx.database.set('game_2048_records', {guildId}, {bestPlayers})
+          await ctx.database.set('game_2048_records', {channelId}, {bestPlayers})
         }
         for (const player of getUsers) {
           const {userId, username, money} = player;
@@ -666,7 +665,7 @@ ${tilePositionHtml}
           }
         }
         // 重置游戏状态 发送游戏结束消息
-        await reset2048Game(guildId)
+        await reset2048Game(channelId)
         return await sendMessage(session, `游戏结束！\n你们输惹...\n但没关系，下次一定能行！${h.image(imageBuffer, `image/${config.imageType}`)}`)
       }
       if (gameInfo.isKeepPlaying && isOver) {
@@ -694,7 +693,7 @@ ${tilePositionHtml}
           }
 
         }
-        const getNewUsers = await ctx.database.get('players_in_2048_playing', {guildId})
+        const getNewUsers = await ctx.database.get('players_in_2048_playing', {channelId})
         // 生成结算字符串
         let settlementResult = '';
         for (const player of getNewUsers) {
@@ -703,7 +702,7 @@ ${tilePositionHtml}
             settlementResult += `【${username}】：【+${money}】\n`;
           }
         }
-        await reset2048Game(guildId)
+        await reset2048Game(channelId)
         return await sendMessage(session, `游戏结束了哦！${h.image(imageBuffer, `image/${config.imageType}\n继续游戏后的结算结果如下：\n${settlementResult}`)}\n欢迎下次再来玩哦~`)
       }
       if (!gameInfo.isKeepPlaying && isWon) {
@@ -730,7 +729,7 @@ ${tilePositionHtml}
         }
 
         if (!config.enableContinuedPlayAfter2048Win) {
-          await reset2048Game(guildId)
+          await reset2048Game(channelId)
           return await sendMessage(session, `2048！\n恭喜🎉你们赢了！\n${h.image(imageBuffer, `image/${config.imageType}`)}\n结算结果如下：\n${settlementResult}\n下次再见哦~`)
         } else {
           await sendMessage(session, `2048！\n恭喜🎉你们赢了！\n${h.image(imageBuffer, `image/${config.imageType}`)}\n结算结果如下：\n${settlementResult}`)
@@ -747,7 +746,7 @@ ${tilePositionHtml}
           ++inputNum
           if (userInput === '继续游戏') {
             isChoose = true
-            await ctx.database.set('game_2048_records', {guildId}, {isKeepPlaying: true})
+            await ctx.database.set('game_2048_records', {channelId}, {isKeepPlaying: true})
             const html = `${htmlHead}
 .game-container .game-message p {
             font-size: 60px;
@@ -791,12 +790,12 @@ ${tilePositionHtml}
             return await sendMessage(session, `【@${username}】\n您选择了【继续游戏】！让我看看你们能走多远！\n祝你们接下来一路顺利呀~\n${h.image(imageBuffer, `image/${config.imageType}`)}`)
           } else if (userInput === '到此为止') {
             isChoose = true
-            await reset2048Game(guildId)
+            await reset2048Game(channelId)
             return await sendMessage(session, `【@${username}】\n您选择了【到此为止】！\n该局游戏结束咯~\n那就让我们下次再见吧~`)
           }
         }
         if (!isChoose) {
-          await reset2048Game(guildId)
+          await reset2048Game(channelId)
           await sendMessage(session, `最后操作者未做出选择，该局游戏结束咯~`)
         }
 
@@ -829,7 +828,7 @@ ${tilePositionHtml}
 参与的玩家如下：
 ${bestPlayersList}`;
       } else {
-        const gameInfo: GameRecord = await getGameInfo(session.guildId)
+        const gameInfo: GameRecord = await getGameInfo(session.channelId)
         // 动态生成 bestPlayers 部分
         const bestPlayersList = gameInfo.bestPlayers.map(player => `【${player.username}】`).join('\n');
         result = `历史最高数：【${gameInfo.highestNumber}】
@@ -922,7 +921,7 @@ ${bestPlayersList}`;
   // cx*
   ctx.command('2048Game.查询玩家记录 [targetUser:text]', '查询玩家记录')
     .action(async ({session}, targetUser) => {
-      let {guildId, userId, username} = session
+      let {channelId, userId, username} = session
       if (targetUser) {
         const userIdRegex = /<at id="([^"]+)"(?: name="([^"]+)")?\/>/;
         const match = targetUser.match(userIdRegex);
@@ -955,7 +954,7 @@ ${bestPlayersList}`;
 
   // ch*
 
-  async function updateBestPlayerUsername(bestPlayers: any[], guildId, userId, username: string,) {
+  async function updateBestPlayerUsername(bestPlayers: any[], channelId, userId, username: string,) {
     if (bestPlayers.length !== 0) {
       // 寻找 playerId 与 userId 相同的元素
       const playerIndex = bestPlayers.findIndex(player => player.userId === userId);
@@ -964,7 +963,7 @@ ${bestPlayersList}`;
         // 判断 username 和 playerName 是否一样，如果不一样，就将 playerName 改成 username
         if (bestPlayers[playerIndex].username !== username) {
           bestPlayers[playerIndex].username = username;
-          await ctx.database.set('game_2048_records', {guildId}, {bestPlayers})
+          await ctx.database.set('game_2048_records', {channelId}, {bestPlayers})
         }
       }
     }
@@ -1001,9 +1000,9 @@ ${bestPlayersList}`;
     return await sendMessage(session, result);
   }
 
-  async function reset2048Game(guildId: string): Promise<void> {
-    await ctx.database.remove('players_in_2048_playing', {guildId});
-    await ctx.database.set('game_2048_records', {guildId}, {
+  async function reset2048Game(channelId: string): Promise<void> {
+    await ctx.database.remove('players_in_2048_playing', {channelId});
+    await ctx.database.set('game_2048_records', {channelId}, {
       progress: [
         [null, null, null, null],
         [null, null, null, null],
@@ -1019,7 +1018,7 @@ ${bestPlayersList}`;
 
 
   // 向上移动并合并
-  async function moveAndMergeUp(state: Cell[][], guildId) {
+  async function moveAndMergeUp(state: Cell[][], channelId) {
     // const newState = JSON.parse(JSON.stringify(state)); // 创建 state 的深层副本，以避免对原始数据的修改
 
     for (let col = 0; col < state[0].length; col++) {
@@ -1039,12 +1038,12 @@ ${bestPlayersList}`;
             } else if (state[currentRow - 1][col].value === state[currentRow][col].value && currentRow - 1 !== mergeIndex) {
               // 如果上方格子的值与当前格子相等且上方格子未参与过合并，则合并两个格子的值
               state[currentRow - 1][col].value *= 2;
-              const gameInfo = await getGameInfo(guildId)
+              const gameInfo = await getGameInfo(channelId)
               const score = gameInfo.score + state[currentRow - 1][col].value
               if (score > gameInfo.best && gameInfo.gridSize === 4) {
-                await ctx.database.set('game_2048_records', {guildId}, {score, best: score})
+                await ctx.database.set('game_2048_records', {channelId}, {score, best: score})
               } else {
-                await ctx.database.set('game_2048_records', {guildId}, {score})
+                await ctx.database.set('game_2048_records', {channelId}, {score})
               }
               state[currentRow][col] = null;
               mergeIndex = currentRow - 1;
@@ -1062,7 +1061,7 @@ ${bestPlayersList}`;
   }
 
   // 向下移动并合并
-  async function moveAndMergeDown(state, guildId) {
+  async function moveAndMergeDown(state, channelId) {
     // const newState = JSON.parse(JSON.stringify(state)); // 创建 state 的深层副本，以避免对原始数据的修改
 
     for (let col = 0; col < state[0].length; col++) {
@@ -1083,12 +1082,12 @@ ${bestPlayersList}`;
               // 如果下方格子的值与当前格子相等且下方格子未参与过合并，则合并两个格子的值
               state[currentRow + 1][col].value *= 2;
 
-              const gameInfo = await getGameInfo(guildId)
+              const gameInfo = await getGameInfo(channelId)
               const score = gameInfo.score + state[currentRow + 1][col].value
               if (score > gameInfo.best && gameInfo.gridSize === 4) {
-                await ctx.database.set('game_2048_records', {guildId}, {score, best: score})
+                await ctx.database.set('game_2048_records', {channelId}, {score, best: score})
               } else {
-                await ctx.database.set('game_2048_records', {guildId}, {score})
+                await ctx.database.set('game_2048_records', {channelId}, {score})
               }
 
               state[currentRow][col] = null;
@@ -1107,7 +1106,7 @@ ${bestPlayersList}`;
   }
 
   // 向左移动并合并
-  async function moveAndMergeLeft(state, guildId) {
+  async function moveAndMergeLeft(state, channelId) {
     // const newState = JSON.parse(JSON.stringify(state)); // 创建 state 的深层副本，以避免对原始数据的修改
 
     for (let row = 0; row < state.length; row++) {
@@ -1128,12 +1127,12 @@ ${bestPlayersList}`;
               // 如果左侧格子的值与当前格子相等且左侧格子未参与过合并，则合并两个格子的值
               state[row][currentCol - 1].value *= 2;
 
-              const gameInfo = await getGameInfo(guildId)
+              const gameInfo = await getGameInfo(channelId)
               const score = gameInfo.score + state[row][currentCol - 1].value
               if (score > gameInfo.best && gameInfo.gridSize === 4) {
-                await ctx.database.set('game_2048_records', {guildId}, {score, best: score})
+                await ctx.database.set('game_2048_records', {channelId}, {score, best: score})
               } else {
-                await ctx.database.set('game_2048_records', {guildId}, {score})
+                await ctx.database.set('game_2048_records', {channelId}, {score})
               }
 
               state[row][currentCol] = null;
@@ -1152,7 +1151,7 @@ ${bestPlayersList}`;
   }
 
   // 向右移动并合并
-  async function moveAndMergeRight(state, guildId) {
+  async function moveAndMergeRight(state, channelId) {
     // const newState = JSON.parse(JSON.stringify(state)); // 创建 state 的深层副本，以避免对原始数据的修改
 
     for (let row = 0; row < state.length; row++) {
@@ -1173,12 +1172,12 @@ ${bestPlayersList}`;
               // 如果右侧格子的值与当前格子相等且右侧格子未参与过合并，则合并两个格子的值
               state[row][currentCol + 1].value *= 2;
 
-              const gameInfo = await getGameInfo(guildId)
+              const gameInfo = await getGameInfo(channelId)
               const score = gameInfo.score + state[row][currentCol + 1].value
               if (score > gameInfo.best && gameInfo.gridSize === 4) {
-                await ctx.database.set('game_2048_records', {guildId}, {score, best: score})
+                await ctx.database.set('game_2048_records', {channelId}, {score, best: score})
               } else {
-                await ctx.database.set('game_2048_records', {guildId}, {score})
+                await ctx.database.set('game_2048_records', {channelId}, {score})
               }
 
               state[row][currentCol] = null;
@@ -1196,11 +1195,11 @@ ${bestPlayersList}`;
     return state;
   }
 
-  async function getGameInfo(guildId: string): Promise<GameRecord> {
-    let gameRecord = await ctx.database.get('game_2048_records', {guildId});
+  async function getGameInfo(channelId: string): Promise<GameRecord> {
+    let gameRecord = await ctx.database.get('game_2048_records', {channelId});
     if (gameRecord.length === 0) {
       await ctx.database.create('game_2048_records', {
-        guildId,
+        channelId,
         gameStatus: '未开始',
         best: 0,
         score: 0,
@@ -1215,7 +1214,7 @@ ${bestPlayersList}`;
         bestPlayers: [],
         highestNumber: 0,
       });
-      gameRecord = await ctx.database.get('game_2048_records', {guildId});
+      gameRecord = await ctx.database.get('game_2048_records', {channelId});
     }
     return gameRecord[0];
   }
