@@ -37,18 +37,32 @@ export interface Config {
   incrementalRewardForHighNumbers: boolean
 }
 
-export const Config: Schema<Config> = Schema.object({
-  maxInvestmentCurrency: Schema.number().min(0).default(50).description(`加入游戏时可投入的最大货币数额。`),
-  defaultMaxLeaderboardEntries: Schema.number().min(0).default(10).description(`显示排行榜时默认的最大人数。`),
-  rewardMultiplier2048Win: Schema.number().min(0).default(2).description(`达成 2048 赢了之后可得到的货币倍数。`),
-  defaultGridSize2048: Schema.number().min(4).max(8).default(4).description(`开始 2048 游戏时默认的游戏网格大小，范围 4~8，值为 4 时为经典模式，才会记分和奖励。`),
-  imageType: Schema.union(['png', 'jpeg', 'webp']).default('png').description(`发送的图片类型。`),
-  allowNonPlayersToMove2048Tiles: Schema.boolean().default(false).description(`是否允许未加入游戏的人进行 2048 游戏的移动操作。`),
-  isMobileCommandMiddlewarePrefixFree: Schema.boolean().default(false).description(`是否开启移动指令无前缀的中间件。`),
-  enableContinuedPlayAfter2048Win: Schema.boolean().default(true).description(`是否开启赢得2048后的继续游戏功能。`),
-  rewardHighNumbers: Schema.boolean().default(true).description(`是否对后续的高数字进行奖励。`),
-  incrementalRewardForHighNumbers: Schema.boolean().default(true).description(`高数字奖励是否依次递增。`),
-})
+export const Config: Schema<Config> = Schema.intersect([
+  Schema.object({
+    maxInvestmentCurrency: Schema.number().min(0).default(50).description(`加入游戏时可投入的最大货币数额。`),
+  }).description('游戏投入设置'),
+  Schema.object({
+    defaultMaxLeaderboardEntries: Schema.number().min(0).default(10).description(`显示排行榜时默认的最大人数。`),
+  }).description('排行榜设置'),
+  Schema.object({
+    rewardMultiplier2048Win: Schema.number().min(0).default(2).description(`达成 2048 赢了之后可得到的货币倍数。`),
+    defaultGridSize2048: Schema.number().min(4).max(8).default(4).description(`开始 2048 游戏时默认的游戏网格大小，范围 4~8，值为 4 时为经典模式，才会记分和奖励。`),
+
+  }).description('2048 游戏奖励设置'),
+  Schema.object({
+    imageType: Schema.union(['png', 'jpeg', 'webp']).default('png').description(`发送的图片类型。`),
+  }).description('图片发送设置'),
+  Schema.object({
+    allowNonPlayersToMove2048Tiles: Schema.boolean().default(false).description(`是否允许未加入游戏的人进行 2048 游戏的移动操作。`),
+    isMobileCommandMiddlewarePrefixFree: Schema.boolean().default(false).description(`是否开启移动指令无前缀的中间件。`),
+    enableContinuedPlayAfter2048Win: Schema.boolean().default(true).description(`是否开启赢得2048后的继续游戏功能。`),
+  }).description('2048 游戏操作设置'),
+  Schema.object({
+    rewardHighNumbers: Schema.boolean().default(true).description(`是否对后续的高数字进行奖励。`),
+    incrementalRewardForHighNumbers: Schema.boolean().default(true).description(`高数字奖励是否依次递增。`),
+  }).description('数字奖励设置'),
+])
+
 
 declare module 'koishi' {
   interface Tables {
