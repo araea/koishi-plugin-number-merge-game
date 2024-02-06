@@ -19,11 +19,13 @@
 
 ## ⚙️ 配置项
 
-- `maxInvestmentCurrency`：加入游戏时可投入的最大货币数额，默认为 50。
-- `defaultMaxLeaderboardEntries`：显示排行榜时默认的最大人数，默认为 10。
-- `rewardMultiplier2048Win`：达成 2048 赢了之后可得到的货币倍数，默认为 2。
-- `defaultGridSize2048`：开始 2048 游戏时默认的游戏网格大小，范围 4~8，值为 4 时为经典模式，才会记分和奖励，默认为 4。
+- `maxInvestmentCurrency`：加入游戏时可投入的最大货币数额，默认为 `50`。
+- `defaultMaxLeaderboardEntries`：显示排行榜时默认的最大人数，默认为 `10`。
+- `rewardMultiplier2048Win`：达成 2048 赢了之后可得到的货币倍数，默认为 `2`。
+- `defaultGridSize2048`：开始 2048 游戏时默认的游戏网格大小，范围 `4~8`，值为 `4` 时为经典模式，才会记分和奖励，默认为 `4`。
 - `imageType`：发送的图片类型，可选 `png`，`jpeg` 或 `webp`，默认为 `png`。
+- `allowNonPlayersToMove2048Tiles`：是否允许未加入游戏的人进行 2048 游戏的移动操作，默认为 `false`。
+- `isMobileCommandMiddlewarePrefixFree`：是否开启移动指令无前缀的中间件，默认为 `false`。
 - `enableContinuedPlayAfter2048Win`：是否开启赢得 2048 后的继续游戏功能，默认为 `true`。
 - `rewardHighNumbers`：是否对后续的高数字进行奖励，默认为 `true`。
 - `incrementalRewardForHighNumbers`：高数字奖励是否依次递增，默认为 `true`。

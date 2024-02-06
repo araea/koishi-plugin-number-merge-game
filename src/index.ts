@@ -30,6 +30,8 @@ export interface Config {
   defaultMaxLeaderboardEntries: number
   rewardMultiplier2048Win: number
   imageType: "png" | "jpeg" | "webp"
+  allowNonPlayersToMove2048Tiles: boolean
+  isMobileCommandMiddlewarePrefixFree: boolean
   enableContinuedPlayAfter2048Win: boolean
   rewardHighNumbers: boolean
   incrementalRewardForHighNumbers: boolean
@@ -41,6 +43,8 @@ export const Config: Schema<Config> = Schema.object({
   rewardMultiplier2048Win: Schema.number().min(0).default(2).description(`达成 2048 赢了之后可得到的货币倍数。`),
   defaultGridSize2048: Schema.number().min(4).max(8).default(4).description(`开始 2048 游戏时默认的游戏网格大小，范围 4~8，值为 4 时为经典模式，才会记分和奖励。`),
   imageType: Schema.union(['png', 'jpeg', 'webp']).default('png').description(`发送的图片类型。`),
+  allowNonPlayersToMove2048Tiles: Schema.boolean().default(false).description(`是否允许未加入游戏的人进行 2048 游戏的移动操作。`),
+  isMobileCommandMiddlewarePrefixFree: Schema.boolean().default(false).description(`是否开启移动指令无前缀的中间件。`),
   enableContinuedPlayAfter2048Win: Schema.boolean().default(true).description(`是否开启赢得2048后的继续游戏功能。`),
   rewardHighNumbers: Schema.boolean().default(true).description(`是否对后续的高数字进行奖励。`),
   incrementalRewardForHighNumbers: Schema.boolean().default(true).description(`高数字奖励是否依次递增。`),
@@ -150,6 +154,25 @@ export function apply(ctx: Context, config: Config) {
     autoInc: true,
   })
 
+  // zjj*
+  ctx.middleware(async (session, next) => {
+    const {guildId, content} = session;
+    if (!config.isMobileCommandMiddlewarePrefixFree) {
+      return await next();
+    }
+
+    const gameInfo = await getGameInfo(guildId);
+    if (gameInfo.gameStatus === '未开始') {
+      return await next();
+    }
+
+    const moveChars = ['上', 's', 'u', '下', 'x', 'd', '左', 'z', 'l', '右', 'y', 'r'];
+    if (content.split('').some(char => moveChars.includes(char))) {
+      await session.execute(`2048Game.移动 ${content}`);
+      return;
+    }
+  });
+
   // 2048Game h*
   ctx.command('2048Game', '2048Game指令帮助')
     .action(async ({session}) => {
@@ -164,21 +187,8 @@ export function apply(ctx: Context, config: Config) {
         // 在这里为私聊场景赋予一个 guildId
         guildId = `privateChat_${userId}`;
       }
-      // 玩家记录表操作
-      const userRecord = await ctx.database.get('player_2048_records', {userId});
-      if (userRecord.length === 0) {
-        await ctx.database.create('player_2048_records', {
-          userId,
-          username,
-          best: 0,
-          win: 0,
-          lose: 0,
-          moneyChange: 0,
-          highestNumber: 0
-        })
-      } else if (username !== userRecord[0].username) {
-        await ctx.database.set('player_2048_records', {userId}, {username});
-      }
+      // 玩家记录表操作(更新用户名)
+      await updateUserRecord(userId, username)
 
       // 判断游戏是否已经开始，若开始，则不给你加入。 再输出一张当前游戏状态图片
       // 游戏记录表操作
@@ -239,18 +249,7 @@ ${tilePositionHtml}
 
       // 历史最高的玩家也要为他们更新用户名
       const bestPlayers = gameInfo.bestPlayers
-      if (bestPlayers.length !== 0) {
-        // 寻找 playerId 与 userId 相同的元素
-        const playerIndex = bestPlayers.findIndex(player => player.userId === userId);
-        // 如果找到了相同的 playerId
-        if (playerIndex !== -1) {
-          // 判断 username 和 playerName 是否一样，如果不一样，就将 playerName 改成 username
-          if (bestPlayers[playerIndex].username !== username) {
-            bestPlayers[playerIndex].username = username;
-            await ctx.database.set('game_2048_records', {guildId}, {bestPlayers})
-          }
-        }
-      }
+      await updateBestPlayerUsername(bestPlayers, guildId, userId, username)
 
       // 判断该玩家是否已经加入游戏，若已经加入，则提醒并为其修改投入货币的金额 （如果有正确输入的话）
       // 判断该玩家有没有加入过游戏
@@ -490,9 +489,18 @@ ${tilePositionHtml}
       if (gameInfo.gameStatus === '未开始') {
         return await sendMessage(session, `【@${username}】\n游戏还没开始呢~`);
       }
-      const getPlayer = await ctx.database.get('players_in_2048_playing', {guildId, userId})
+      let getPlayer = await ctx.database.get('players_in_2048_playing', {guildId, userId})
       if (getPlayer.length === 0) {
-        return await sendMessage(session, `【@${username}】\n没加入游戏的话~移动不了哦！`);
+        if (config.allowNonPlayersToMove2048Tiles) {
+          // 新增该玩家，并更新 getPlayer
+          await updateUserRecord(userId, username)
+          await updateBestPlayerUsername(gameInfo.bestPlayers, guildId, userId, username)
+          // 在游玩表中创建玩家
+          await ctx.database.create('players_in_2048_playing', {guildId, userId, username, money: 0});
+          // getPlayer = await ctx.database.get('players_in_2048_playing', {guildId, userId})
+        } else {
+          return await sendMessage(session, `【@${username}】\n没加入游戏的话~移动不了哦！`);
+        }
       }
       if (!operation) {
         await sendMessage(session, `【@${username}】\n请输入你想要进行的【移动操作】：\n可以一次输入多个操作~\n例如：左右上下左左右`)
@@ -501,9 +509,9 @@ ${tilePositionHtml}
         operation = userInput
       }
       let state = gameInfo.progress
+      const originalState = JSON.parse(JSON.stringify(state)) as Cell[][]; // 创建 state 的深层副本，以避免对原始数据的修改
       for (let i = 0; i < operation.length; i++) {
         let currentChar = operation[i];
-        const originalState = JSON.parse(JSON.stringify(state)) as Cell[][]; // 创建 state 的深层副本，以避免对原始数据的修改
         if (currentChar === '上' || currentChar === 's' || currentChar === 'u') {
           // 执行上的操作
           await moveAndMergeUp(state, guildId)
@@ -522,7 +530,6 @@ ${tilePositionHtml}
           state = insertNewElements(state, Math.pow(2, gameInfo.gridSize - 4))
         }
       }
-
       const theHighestNumber = findHighestValue(state)
       // 经典模式才记分才能赢
       let isWon: boolean = false
@@ -933,6 +940,39 @@ ${bestPlayersList}`;
     });
 
   // ch*
+
+  async function updateBestPlayerUsername(bestPlayers: any[], guildId, userId, username: string,) {
+    if (bestPlayers.length !== 0) {
+      // 寻找 playerId 与 userId 相同的元素
+      const playerIndex = bestPlayers.findIndex(player => player.userId === userId);
+      // 如果找到了相同的 playerId
+      if (playerIndex !== -1) {
+        // 判断 username 和 playerName 是否一样，如果不一样，就将 playerName 改成 username
+        if (bestPlayers[playerIndex].username !== username) {
+          bestPlayers[playerIndex].username = username;
+          await ctx.database.set('game_2048_records', {guildId}, {bestPlayers})
+        }
+      }
+    }
+  }
+
+  async function updateUserRecord(userId: string, username: string): Promise<void> {
+    const userRecord = await ctx.database.get('player_2048_records', {userId});
+    if (userRecord.length === 0) {
+      await ctx.database.create('player_2048_records', {
+        userId,
+        username,
+        best: 0,
+        win: 0,
+        lose: 0,
+        moneyChange: 0,
+        highestNumber: 0
+      });
+    } else if (username !== userRecord[0].username) {
+      await ctx.database.set('player_2048_records', {userId}, {username});
+    }
+  }
+
 
   // 生成排行榜
   async function getLeaderboard(session: any, type: string, sortField: string, title: string) {
