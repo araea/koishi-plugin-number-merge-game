@@ -1,11 +1,13 @@
 import {Context, h, Schema} from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
 import {} from 'koishi-plugin-monetary'
+import {} from 'koishi-plugin-markdown-to-image-service'
 import path from "node:path";
 
 export const name = 'number-merge-game'
 export const inject = {
   required: ['monetary', 'database', 'puppeteer'],
+  optional: ['markdownToImage'],
 }
 export const usage = `## 🌈 使用
 
@@ -33,6 +35,7 @@ export interface Config {
   defaultMaxLeaderboardEntries: number
   rewardMultiplier2048Win: number
   imageType: "png" | "jpeg" | "webp"
+  isTextToImageConversionEnabled: boolean
   allowNonPlayersToMove2048Tiles: boolean
   isMobileCommandMiddlewarePrefixFree: boolean
   enableContinuedPlayAfter2048Win: boolean
@@ -53,6 +56,7 @@ export const Config: Schema<Config> = Schema.intersect([
   }).description('2048 游戏奖励设置'),
   Schema.object({
     imageType: Schema.union(['png', 'jpeg', 'webp']).default('png').description(`发送的图片类型。`),
+    isTextToImageConversionEnabled: Schema.boolean().default(false).description(`是否开启将文本转为图片的功能（可选），如需启用，需要启用 \`markdownToImage\` 服务。`),
   }).description('图片发送设置'),
   Schema.object({
     allowNonPlayersToMove2048Tiles: Schema.boolean().default(false).description(`是否允许未加入游戏的人进行 2048 游戏的移动操作。`),
@@ -1224,7 +1228,27 @@ ${bestPlayersList}`;
 
   // sh*
   async function sendMessage(session: any, message: any): Promise<void> {
-    await session.send(message);
+    if (config.isTextToImageConversionEnabled) {
+      const lines = message.split('\n');
+      const isOnlyImgTag = lines.length === 1 && lines[0].trim().startsWith('<img');
+      if (isOnlyImgTag) {
+        await session.send(message);
+      } else {
+        const modifiedMessage = lines
+          .map((line) => {
+            if (line.trim() !== '' && !line.includes('<img')) {
+              return `# ${line}`;
+            } else {
+              return line + '\n';
+            }
+          })
+          .join('\n');
+        const imageBuffer = await ctx.markdownToImage.convertToImage(modifiedMessage);
+        await session.send(h.image(imageBuffer, 'image/png'));
+      }
+    } else {
+      await session.send(message);
+    }
   }
 
   // apply
