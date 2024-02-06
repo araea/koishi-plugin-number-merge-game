@@ -59,7 +59,7 @@ export const Config: Schema<Config> = Schema.intersect([
     isTextToImageConversionEnabled: Schema.boolean().default(false).description(`是否开启将文本转为图片的功能（可选），如需启用，需要启用 \`markdownToImage\` 服务。`),
   }).description('图片发送设置'),
   Schema.object({
-    allowNonPlayersToMove2048Tiles: Schema.boolean().default(false).description(`是否允许未加入游戏的人进行 2048 游戏的移动操作。`),
+    allowNonPlayersToMove2048Tiles: Schema.boolean().default(false).description(`是否允许未加入游戏的人进行 2048 游戏的移动操作（无法投入货币），开启后可以 0 玩家开始游戏。`),
     isMobileCommandMiddlewarePrefixFree: Schema.boolean().default(false).description(`是否开启移动指令无前缀的中间件。`),
     enableContinuedPlayAfter2048Win: Schema.boolean().default(true).description(`是否开启赢得2048后的继续游戏功能。`),
   }).description('2048 游戏操作设置'),
@@ -402,7 +402,7 @@ ${tilePositionHtml}
         return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n难道你想开始两次？\n那可不行！`);
       }
       const numberOfPlayers = (await ctx.database.get('players_in_2048_playing', {channelId})).length;
-      if (numberOfPlayers <= 0) {
+      if (numberOfPlayers <= 0 && !config.allowNonPlayersToMove2048Tiles) {
         return await sendMessage(session, `【@${username}】\n笨蛋，还没有玩家加入游戏呢！才不给你开始~略略略~`);
       }
       const emptyGrid = createEmptyGrid(gridSize)

@@ -40,7 +40,8 @@
 
 ### 2048 游戏操作设置
 
-- `allowNonPlayersToMove2048Tiles`：是否允许未加入游戏的人进行 2048 游戏的移动操作，默认为 `false`。
+- `allowNonPlayersToMove2048Tiles`：是否允许未加入游戏的人进行 2048 游戏的移动操作（无法投入货币），开启后可以 0
+  玩家开始游戏，默认为 `false`。
 - `isMobileCommandMiddlewarePrefixFree`：是否开启移动指令无前缀的中间件，默认为 `false`。
 - `enableContinuedPlayAfter2048Win`：是否开启赢得 2048 后的继续游戏功能，默认为 `true`。
 
