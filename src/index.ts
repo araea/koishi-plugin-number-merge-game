@@ -194,7 +194,7 @@ export function apply(ctx: Context, config: Config) {
           const height = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
           const page = await ctx.puppeteer.page()
           const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
-      await page.goto('file://' + filePath);
+          await page.goto('file://' + filePath);
           await page.setViewport({width, height})
           const html = `${htmlHead}
 .game-container .game-message p {
@@ -231,6 +231,7 @@ ${tilePositionHtml}
 </html>`
           await page.setContent(html, {waitUntil: 'load'})
           const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
+          await page.close()
           return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n而且你还在游戏里面呢~！继续玩吧~\n${h.image(imageBuffer, `image/${config.imageType}`)}`);
         }
         return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n下次记得早点加入游戏呀！`);
@@ -441,6 +442,7 @@ ${tilePositionHtml}
 </html>`
       await page.setContent(html, {waitUntil: 'load'})
       const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
+      await page.close()
       if (gridSize !== 4) {
         const getUsers = await ctx.database.get('players_in_2048_playing', {})
         for (const player of getUsers) {
@@ -597,6 +599,7 @@ ${tilePositionHtml}
 
       await page.setContent(html, {waitUntil: 'load'})
       const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
+      await page.close()
       const getUsers = await ctx.database.get('players_in_2048_playing', {guildId})
       const theBest = newGameInfo.best
       if (gameInfo.gridSize === 4) {
@@ -757,8 +760,13 @@ ${tilePositionHtml}
 </div>
 </body>
 </html>`
+            const page = await ctx.puppeteer.page()
+            const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
+            await page.goto('file://' + filePath);
+            await page.setViewport({width, height})
             await page.setContent(html, {waitUntil: 'load'})
             const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
+            await page.close()
             return await sendMessage(session, `【@${username}】\n您选择了【继续游戏】！让我看看你们能走多远！\n祝你们接下来一路顺利呀~\n${h.image(imageBuffer, `image/${config.imageType}`)}`)
           } else if (userInput === '到此为止') {
             isChoose = true
@@ -1453,21 +1461,10 @@ const htmlHead = `<html lang="zh">
     <title>2048 Game</title>
 
     <style>
-        @font-face {
-            font-family: "Clear Sans";
-            src: url("ClearSans-Light-webfont.eot");
-            src: url("ClearSans-Light-webfont.eot?#iefix") format("embedded-opentype"),
-            url("ClearSans-Light-webfont.svg#clear_sans_lightregular") format("svg"),
-            url("ClearSans-Light-webfont.woff") format("woff");
-            font-weight: 200;
-            font-style: normal;
-        }
+
 
         @font-face {
             font-family: "Clear Sans";
-            src: url("ClearSans-Regular-webfont.eot");
-            src: url("ClearSans-Regular-webfont.eot?#iefix") format("embedded-opentype"),
-            url("ClearSans-Regular-webfont.svg#clear_sansregular") format("svg"),
             url("ClearSans-Regular-webfont.woff") format("woff");
             font-weight: normal;
             font-style: normal;
@@ -1475,9 +1472,6 @@ const htmlHead = `<html lang="zh">
 
         @font-face {
             font-family: "Clear Sans";
-            src: url("ClearSans-Bold-webfont.eot");
-            src: url("ClearSans-Bold-webfont.eot?#iefix") format("embedded-opentype"),
-            url("ClearSans-Bold-webfont.svg#clear_sansbold") format("svg"),
             url("ClearSans-Bold-webfont.woff") format("woff");
             font-weight: 700;
             font-style: normal;
