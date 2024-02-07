@@ -127,6 +127,7 @@ interface BestPlayer {
 }
 
 export function apply(ctx: Context, config: Config) {
+  // tzb*
   ctx.model.extend('game_2048_records', {
     id: 'unsigned',
     channelId: 'string',
@@ -891,7 +892,7 @@ ${bestPlayersList}`;
       if (typeof number !== 'number' || isNaN(number) || number < 0) {
         return '请输入大于等于 0 的数字作为排行榜的参数。';
       }
-      return await getLeaderboard(session, 'win', 'win', '玩家胜场排行榜');
+      return await getLeaderboard(session, 'win', 'win', '玩家胜场排行榜', number);
     });
 
   ctx.command('2048Game.排行榜.输场 [number:number]', '查看玩家输场排行榜')
@@ -899,7 +900,7 @@ ${bestPlayersList}`;
       if (typeof number !== 'number' || isNaN(number) || number < 0) {
         return '请输入大于等于 0 的数字作为排行榜的参数。';
       }
-      return await getLeaderboard(session, 'lose', 'lose', '玩家输场排行榜');
+      return await getLeaderboard(session, 'lose', 'lose', '玩家输场排行榜', number);
     });
 
   ctx.command('2048Game.排行榜.最高分数 [number:number]', '查看玩家最高分排行榜')
@@ -907,7 +908,7 @@ ${bestPlayersList}`;
       if (typeof number !== 'number' || isNaN(number) || number < 0) {
         return '请输入大于等于 0 的数字作为排行榜的参数。';
       }
-      return await getLeaderboard(session, 'best', 'best', '玩家最高分排行榜');
+      return await getLeaderboard(session, 'best', 'best', '玩家最高分排行榜', number);
     });
 
   ctx.command('2048Game.排行榜.最高数字 [number:number]', '查看玩家最高数字排行榜')
@@ -915,7 +916,7 @@ ${bestPlayersList}`;
       if (typeof number !== 'number' || isNaN(number) || number < 0) {
         return '请输入大于等于 0 的数字作为排行榜的参数。';
       }
-      return await getLeaderboard(session, 'highestNumber', 'highestNumber', '玩家最高数字排行榜');
+      return await getLeaderboard(session, 'highestNumber', 'highestNumber', '玩家最高数字排行榜', number);
     });
 
   ctx.command('2048Game.排行榜.损益 [number:number]', '查看玩家损益排行榜')
@@ -923,7 +924,7 @@ ${bestPlayersList}`;
       if (typeof number !== 'number' || isNaN(number) || number < 0) {
         return '请输入大于等于 0 的数字作为排行榜的参数。';
       }
-      return await getLeaderboard(session, 'moneyChange', 'moneyChange', '玩家损益排行榜');
+      return await getLeaderboard(session, 'moneyChange', 'moneyChange', '玩家损益排行榜', number);
     });
   // cx*
   ctx.command('2048Game.查询玩家记录 [targetUser:text]', '查询玩家记录')
@@ -995,10 +996,10 @@ ${bestPlayersList}`;
 
 
   // 生成排行榜
-  async function getLeaderboard(session: any, type: string, sortField: string, title: string) {
+  async function getLeaderboard(session: any, type: string, sortField: string, title: string, number: number) {
     const getPlayers: PlayerRecord[] = await ctx.database.get('player_2048_records', {})
     const sortedPlayers = getPlayers.sort((a, b) => b[sortField] - a[sortField])
-    const topPlayers = sortedPlayers.slice(0, config.defaultMaxLeaderboardEntries)
+    const topPlayers = sortedPlayers.slice(0, number)
 
     let result = `${title}：\n`;
     topPlayers.forEach((player, index) => {
@@ -1226,7 +1227,7 @@ ${bestPlayersList}`;
     return gameRecord[0];
   }
 
-  // sh*
+  // csh*
   async function sendMessage(session: any, message: any): Promise<void> {
     if (config.isTextToImageConversionEnabled) {
       const lines = message.split('\n');
@@ -2426,27 +2427,6 @@ const htmlHead = `<html lang="zh">
         animation: immersive-translate-loading-animation 0.6s infinite linear !important;
     }
 
-    /*@-webkit-keyframes immersive-translate-loading-animation {*/
-    /*    from {*/
-    /*        -webkit-transform: rotate(0deg);*/
-    /*    }*/
-
-    /*    to {*/
-    /*        -webkit-transform: rotate(359deg);*/
-    /*    }*/
-    /*}*/
-
-    /*@keyframes immersive-translate-loading-animation {*/
-    /*    from {*/
-    /*        transform: rotate(0deg);*/
-    /*    }*/
-
-    /*    to {*/
-    /*        transform: rotate(359deg);*/
-    /*    }*/
-    /*}*/
-
-
     .immersive-translate-input-loading {
         --loading-color: #f78fb6;
         width: 6px;
@@ -2460,44 +2440,6 @@ const htmlHead = `<html lang="zh">
         box-sizing: border-box;
         animation: immersiveTranslateShadowRolling 1.5s linear infinite;
     }
-
-    /*@keyframes immersiveTranslateShadowRolling {*/
-    /*    0% {*/
-    /*        box-shadow: 0px 0 rgba(255, 255, 255, 0), 0px 0 rgba(255, 255, 255, 0), 0px 0 rgba(255, 255, 255, 0), 0px 0 rgba(255, 255, 255, 0);*/
-    /*    }*/
-
-    /*    12% {*/
-    /*        box-shadow: 100px 0 var(--loading-color), 0px 0 rgba(255, 255, 255, 0), 0px 0 rgba(255, 255, 255, 0), 0px 0 rgba(255, 255, 255, 0);*/
-    /*    }*/
-
-    /*    25% {*/
-    /*        box-shadow: 110px 0 var(--loading-color), 100px 0 var(--loading-color), 0px 0 rgba(255, 255, 255, 0), 0px 0 rgba(255, 255, 255, 0);*/
-    /*    }*/
-
-    /*    36% {*/
-    /*        box-shadow: 120px 0 var(--loading-color), 110px 0 var(--loading-color), 100px 0 var(--loading-color), 0px 0 rgba(255, 255, 255, 0);*/
-    /*    }*/
-
-    /*    50% {*/
-    /*        box-shadow: 130px 0 var(--loading-color), 120px 0 var(--loading-color), 110px 0 var(--loading-color), 100px 0 var(--loading-color);*/
-    /*    }*/
-
-    /*    62% {*/
-    /*        box-shadow: 200px 0 rgba(255, 255, 255, 0), 130px 0 var(--loading-color), 120px 0 var(--loading-color), 110px 0 var(--loading-color);*/
-    /*    }*/
-
-    /*    75% {*/
-    /*        box-shadow: 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0), 130px 0 var(--loading-color), 120px 0 var(--loading-color);*/
-    /*    }*/
-
-    /*    87% {*/
-    /*        box-shadow: 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0), 130px 0 var(--loading-color);*/
-    /*    }*/
-
-    /*    100% {*/
-    /*        box-shadow: 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0), 200px 0 rgba(255, 255, 255, 0);*/
-    /*    }*/
-    /*}*/
 
 
     .immersive-translate-search-recomend {
@@ -2534,15 +2476,6 @@ const htmlHead = `<html lang="zh">
         top: 16px;
         right: 16px;
         cursor: pointer;
-    }
-
-    .immersive-translate-search-recomend::before {
-        /* content: " "; */
-        /* width: 20px; */
-        /* height: 20px; */
-        /* top: 16px; */
-        /* position: absolute; */
-        /* background: center / contain url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAxlBMVEUAAADpTInqTIjpSofnSIfqS4nfS4XqS4nqTIjsTYnrTInqTIroS4jvQIDqTIn////+/v7rSYjpTIn8/v7uaZzrTIr9/f3wfansWJL88/b85e73qc39+/v3xNnylrvrVI/98fb62Obva5/8+fr76vH4y9zpSIj74e353Oj1ocTzm77xhK/veKbtYpjsXJTqU47oTInxjrXyh7L99fj40eH2ttH1udD3sc31ssz1rMnykLXucqPtbqD85e/1xdn2u9DzqcXrUY6FaJb8AAAADnRSTlMA34BgIM8Q37/fz7+/EGOHcVQAAAGhSURBVDjLhZPncuowEEZFTW7bXVU7xsYYTO/p7bb3f6lICIOYJOT4h7/VnFmvrBFjrF3/CR/SajBHswafctG0Qg3O8O0Xa8BZ6uw7eLjqr30SofCDVSkemMinfL1ecy20r5ygR5zz3ArcAqJExPTPKhDENEmS30Q9+yo4lEQkqVTiIEAHCT10xWERRdH0Bq0aCOPZNDV3s0xaYce1lHEoDHU8wEh3qRJypNcTAeKUIjgKMeGLDoRCLVLTVf+Ownj8Kk6H9HM6QXPgYjQSB0F00EJEu10ILQrs/QeP77BSSr0MzLOyuJJQbnUoOOIUI/A8EeJk9E4YUHUWiRyTVKGgQUB8/3e/NpdGlfI+FMQyWsCBWyz4A/ZyHXyiiz0Ne5aGZssoxRmcChw8/EFKQ5JwwkUo3FRT5yXS7q+Y/rHDZmFktzpGMvO+5QofA4FPpEmGw+EWRCFvnaof7Zhe8NuYSLR0xErKLThUSs8gnODh87ssy6438yzbLzxl012HS19vfCf3CNhnbWOL1eEsDda+gDPUvri8tSZzNFrwIZf1NmNvqC1I/t8j7nYAAAAASUVORK5CYII='); */
     }
 
     .immersive-translate-search-title {
