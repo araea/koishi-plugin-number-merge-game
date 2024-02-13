@@ -191,6 +191,8 @@ export function apply(ctx: Context, config: Config) {
     if (content.split('').some(char => moveChars.includes(char))) {
       await session.execute(`2048Game.移动 ${content}`);
       return;
+    } else {
+      return await next();
     }
   });
 
