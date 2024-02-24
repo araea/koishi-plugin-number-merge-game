@@ -177,7 +177,7 @@ export function apply(ctx: Context, config: Config) {
 
   // zjj*
   ctx.middleware(async (session, next) => {
-    const {channelId, content} = session;
+    const {channelId, content,userId} = session;
     if (!config.isMobileCommandMiddlewarePrefixFree) {
       return await next();
     }
@@ -185,6 +185,15 @@ export function apply(ctx: Context, config: Config) {
     const gameInfo = await getGameInfo(channelId);
     if (gameInfo.gameStatus === '未开始') {
       return await next();
+    }
+
+    // 未开启允许场外
+    if(!config.allowNonPlayersToMove2048Tiles){
+      // 不在游戏里
+      let getPlayer = await ctx.database.get('players_in_2048_playing', {channelId, userId})
+      if (getPlayer.length === 0) {
+        return await next();
+      }
     }
 
     const moveChars = ['上', 's', 'u', '下', 'x', 'd', '左', 'z', 'l', '右', 'y', 'r'];
