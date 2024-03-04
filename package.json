@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-number-merge-game",
   "description": "欢迎来到 2048 小游戏，通过移动将数字组合起来以获得 2048，互动操作，争夺最高分，支持自定义网格的娱乐模式。2️⃣0️⃣4️⃣8️⃣",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [

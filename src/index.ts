@@ -1557,14 +1557,14 @@ const htmlHead = `<html lang="zh">
 
         @font-face {
             font-family: "Clear Sans";
-            url("ClearSans-Regular-webfont.woff") format("woff");
+            url("./assets/ClearSans-Regular-webfont.woff") format("woff");
             font-weight: normal;
             font-style: normal;
         }
 
         @font-face {
             font-family: "Clear Sans";
-            url("ClearSans-Bold-webfont.woff") format("woff");
+            url("./assets/ClearSans-Bold-webfont.woff") format("woff");
             font-weight: 700;
             font-style: normal;
         }
