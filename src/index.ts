@@ -234,7 +234,9 @@ export function apply(ctx: Context, config: Config) {
           const gameContainerHtml = generate2048GameContainerHtml(gameInfo.gridSize);
           const width = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
           const height = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
-          const page = await ctx.puppeteer.page()
+          const browser = ctx.puppeteer.browser
+          const context = await browser.createBrowserContext()
+          const page = await context.newPage()
           const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
           await page.goto('file://' + filePath);
           await page.setViewport({width, height})
@@ -427,7 +429,9 @@ ${tilePositionHtml}
       await ctx.database.set('game_2048_records', {channelId}, {progress: initialState, gameStatus: '已开始', gridSize})
       // console.log(JSON.stringify(initialState, null, 2));
       const stateHtml = convertStateToHTML(initialState)
-      const page = await ctx.puppeteer.page()
+      const browser = ctx.puppeteer.browser
+      const context = await browser.createBrowserContext()
+      const page = await context.newPage()
       const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
       await page.goto('file://' + filePath);
       await page.setViewport({width, height})
@@ -582,7 +586,9 @@ ${tilePositionHtml}
       const gameContainerHtml = generate2048GameContainerHtml(gameInfo.gridSize);
       const width = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
       const height = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
-      const page = await ctx.puppeteer.page()
+      const browser = ctx.puppeteer.browser
+      const context = await browser.createBrowserContext()
+      const page = await context.newPage()
       const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
       await page.goto('file://' + filePath);
       await page.setViewport({width, height})
@@ -799,7 +805,9 @@ ${tilePositionHtml}
 </div>
 </body>
 </html>`
-            const page = await ctx.puppeteer.page()
+            const browser = ctx.puppeteer.browser
+            const context = await browser.createBrowserContext()
+            const page = await context.newPage()
             const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
             await page.goto('file://' + filePath);
             await page.setViewport({width, height})
