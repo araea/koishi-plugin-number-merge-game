@@ -177,7 +177,7 @@ export function apply(ctx: Context, config: Config) {
 
   // zjj*
   ctx.middleware(async (session, next) => {
-    const {channelId, content,userId} = session;
+    const {channelId, content, userId} = session;
     if (!config.isMobileCommandMiddlewarePrefixFree) {
       return await next();
     }
@@ -188,7 +188,7 @@ export function apply(ctx: Context, config: Config) {
     }
 
     // 未开启允许场外
-    if(!config.allowNonPlayersToMove2048Tiles){
+    if (!config.allowNonPlayersToMove2048Tiles) {
       // 不在游戏里
       let getPlayer = await ctx.database.get('players_in_2048_playing', {channelId, userId})
       if (getPlayer.length === 0) {
@@ -275,7 +275,8 @@ ${tilePositionHtml}
 </html>`
           await page.setContent(html, {waitUntil: 'load'})
           const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
-          await page.close()
+          await page.close();
+          await context.close()
           return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n而且你还在游戏里面呢~！继续玩吧~\n${h.image(imageBuffer, `image/${config.imageType}`)}`);
         }
         return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n下次记得早点加入游戏呀！`);
@@ -477,7 +478,8 @@ ${tilePositionHtml}
 </html>`
       await page.setContent(html, {waitUntil: 'load'})
       const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
-      await page.close()
+      await page.close();
+      await context.close()
       if (gridSize !== 4) {
         const getUsers = await ctx.database.get('players_in_2048_playing', {})
         for (const player of getUsers) {
@@ -644,7 +646,8 @@ ${tilePositionHtml}
 
       await page.setContent(html, {waitUntil: 'load'})
       const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
-      await page.close()
+      await page.close();
+      await context.close()
       const getUsers = await ctx.database.get('players_in_2048_playing', {channelId})
       const theBest = newGameInfo.best
       if (gameInfo.gridSize === 4) {
@@ -813,7 +816,8 @@ ${tilePositionHtml}
             await page.setViewport({width, height})
             await page.setContent(html, {waitUntil: 'load'})
             const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
-            await page.close()
+            await page.close();
+            await context.close()
             return await sendMessage(session, `【@${username}】\n您选择了【继续游戏】！让我看看你们能走多远！\n祝你们接下来一路顺利呀~\n${h.image(imageBuffer, `image/${config.imageType}`)}`)
           } else if (userInput === '到此为止') {
             isChoose = true
