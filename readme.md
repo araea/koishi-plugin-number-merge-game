@@ -32,8 +32,9 @@
 - `rewardMultiplier2048Win`：达成 2048 赢了之后可得到的货币倍数，默认为 `2`。
 - `defaultGridSize2048`：开始 2048 游戏时默认的游戏网格大小，范围 `4~8`，值为 `4` 时为经典模式，才会记分和奖励，默认为 `4`。
 
-### 图片发送设置
+### 消息发送设置
 
+- `retractDelay`：自动撤回等待的时间，默认值为 0，单位是秒。值为 0 时不启用自动撤回功能。
 - `imageType`：发送的图片类型，可选 `png`，`jpeg` 或 `webp`，默认为 `png`。
 - `isTextToImageConversionEnabled`：是否开启将文本转为图片的功能（可选），如需启用，需要启用 `markdownToImage`
   服务，默认为 `false`。

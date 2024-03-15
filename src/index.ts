@@ -34,6 +34,7 @@ export interface Config {
   maxInvestmentCurrency: number
   defaultMaxLeaderboardEntries: number
   rewardMultiplier2048Win: number
+  retractDelay: number
   imageType: "png" | "jpeg" | "webp"
   isTextToImageConversionEnabled: boolean
   allowNonPlayersToMove2048Tiles: boolean
@@ -55,9 +56,10 @@ export const Config: Schema<Config> = Schema.intersect([
     defaultGridSize2048: Schema.number().min(4).max(8).default(4).description(`开始 2048 游戏时默认的游戏网格大小，范围 4~8，值为 4 时为经典模式，才会记分和奖励。`),
   }).description('2048 游戏奖励设置'),
   Schema.object({
+    retractDelay: Schema.number().min(0).default(0).description(`自动撤回等待的时间，单位是秒。值为 0 时不启用自动撤回功能。`),
     imageType: Schema.union(['png', 'jpeg', 'webp']).default('png').description(`发送的图片类型。`),
     isTextToImageConversionEnabled: Schema.boolean().default(false).description(`是否开启将文本转为图片的功能（可选），如需启用，需要启用 \`markdownToImage\` 服务。`),
-  }).description('图片发送设置'),
+  }).description('消息发送设置'),
   Schema.object({
     allowNonPlayersToMove2048Tiles: Schema.boolean().default(false).description(`是否允许未加入游戏的人进行 2048 游戏的移动操作（无法投入货币），开启后可以 0 玩家开始游戏。`),
     isMobileCommandMiddlewarePrefixFree: Schema.boolean().default(false).description(`是否开启移动指令无前缀的中间件。`),
@@ -1251,7 +1253,10 @@ ${bestPlayersList}`;
   }
 
   // csh*
+  let sentMessages = [];
   async function sendMessage(session: any, message: any): Promise<void> {
+    const {bot, channelId} = session;
+    let messageId;
     if (config.isTextToImageConversionEnabled) {
       const lines = message.split('\n');
       const isOnlyImgTag = lines.length === 1 && lines[0].trim().startsWith('<img');
@@ -1268,10 +1273,20 @@ ${bestPlayersList}`;
           })
           .join('\n');
         const imageBuffer = await ctx.markdownToImage.convertToImage(modifiedMessage);
-        await session.send(h.image(imageBuffer, 'image/png'));
+        [messageId] = await session.send(h.image(imageBuffer, `image/${config.imageType}`));
       }
     } else {
-      await session.send(message);
+      [messageId] = await session.send(message);
+    }
+
+    if (config.retractDelay === 0) return;
+    sentMessages.push(messageId);
+
+    if (sentMessages.length > 1) {
+      const oldestMessageId = sentMessages.shift();
+      setTimeout(async () => {
+        await bot.deleteMessage(channelId, oldestMessageId);
+      }, config.retractDelay * 1000);
     }
   }
 
