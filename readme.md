@@ -76,6 +76,14 @@
 
 * https://forum.koishi.xyz/t/topic/6595 - 求插件的帖子（该插件的动力来源） 感谢楼主 xhz （原神大人~）
 
+## 🐱 QQ 群
+
+- 956758505
+
 ## ✨ License
 
-MIT License © 2023
+MIT License © 2024
+
+希望您喜欢这款插件！ 💫
+
+如有任何问题或建议，欢迎联系我哈~ 🎈

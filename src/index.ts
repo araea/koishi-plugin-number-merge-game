@@ -27,7 +27,11 @@ export const usage = `## 🌈 使用
 ### 游戏记录
 - \`2048Game.历史最高\`：查看历史最高记录，可选参数 \`-a\` 跨群查询。
 - \`2048Game.排行榜 [number:number]\`：查看排行榜相关指令，可选 \`胜场\`，\`输场\`，\`最高分数\`，\`最高数字\`，\`损益\`。
-- \`2048Game.查询玩家记录 [targetUser:text]\`：查询玩家游戏记录信息，可选参数为目标玩家的 at 信息，没有参数则默认为指令发送者。`
+- \`2048Game.查询玩家记录 [targetUser:text]\`：查询玩家游戏记录信息，可选参数为目标玩家的 at 信息，没有参数则默认为指令发送者。
+
+## 🐱 QQ 群
+
+- 956758505`
 
 export interface Config {
   defaultGridSize2048: number
