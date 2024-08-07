@@ -1,5 +1,2 @@
 .DS_Store
 tsconfig.tsbuildinfo
-src/*.eot
-src/*.svg
-src/ClearSans-Light-webfont.woff
