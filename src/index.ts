@@ -1,7 +1,7 @@
-import {Context, h, Schema} from 'koishi'
-import {} from 'koishi-plugin-puppeteer'
-import {} from 'koishi-plugin-monetary'
-import {} from 'koishi-plugin-markdown-to-image-service'
+import { Context, h, Schema } from 'koishi'
+import { } from 'koishi-plugin-puppeteer'
+import { } from 'koishi-plugin-monetary'
+import { } from 'koishi-plugin-markdown-to-image-service'
 import path from "node:path";
 
 export const name = 'number-merge-game'
@@ -9,6 +9,7 @@ export const inject = {
   required: ['monetary', 'database', 'puppeteer'],
   optional: ['markdownToImage'],
 }
+
 export const usage = `## 使用
 
 1. 安装 \`monetary\`，\`database\` 和 \`puppeteer\` 插件。
@@ -66,7 +67,6 @@ export const Config: Schema<Config> = Schema.intersect([
   }).description('数字奖励设置'),
 ])
 
-
 declare module 'koishi' {
   interface Tables {
     game_2048_records: GameRecord
@@ -82,12 +82,21 @@ interface Monetary {
   value: number
 }
 
-// 主控游戏数据表 game_2048_records ： id 群组id 游戏状态 当前游戏的进度 （json） 分数 历史最高分数 创造历史最高时参与的玩家名和玩家id
+interface Position {
+  x: number;
+  y: number;
+}
+
+interface Cell {
+  position: Position | null;
+  value: number | null;
+}
+
 export interface GameRecord {
   id: number
   channelId: string
   gameStatus: string
-  progress: any[][] // json
+  progress: Cell[][] // json
   score: number
   isWon: boolean
   isKeepPlaying: boolean
@@ -97,7 +106,6 @@ export interface GameRecord {
   gridSize: number
 }
 
-// 游戏中玩家数据表 players_in_2048_playing ： id 群组id 用户id 用户名 money
 export interface GamingPlayer {
   id: number
   channelId: string
@@ -106,7 +114,6 @@ export interface GamingPlayer {
   money: number
 }
 
-// 玩家记录数据表 player_2048_records ： id 用户id 用户名 胜场 输场 历史最高分数 赚得的货币数额
 export interface PlayerRecord {
   id: number
   userId: string
@@ -124,16 +131,16 @@ interface BestPlayer {
 }
 
 export function apply(ctx: Context, config: Config) {
-  // tzb*
+  // Database extensions
   ctx.model.extend('game_2048_records', {
     id: 'unsigned',
     channelId: 'string',
     best: 'unsigned',
-    gameStatus: {type: 'string', initial: '未开始'},
+    gameStatus: { type: 'string', initial: '未开始' },
     score: 'unsigned',
-    isKeepPlaying: {type: 'boolean', initial: false},
-    isWon: {type: 'boolean', initial: false},
-    bestPlayers: {type: 'json', initial: []},
+    isKeepPlaying: { type: 'boolean', initial: false },
+    isWon: { type: 'boolean', initial: false },
+    bestPlayers: { type: 'json', initial: [] },
     progress: {
       type: 'json', initial: [
         [null, null, null, null],
@@ -148,6 +155,7 @@ export function apply(ctx: Context, config: Config) {
     primary: 'id',
     autoInc: true,
   })
+
   ctx.model.extend('players_in_2048_playing', {
     id: 'unsigned',
     userId: 'string',
@@ -158,6 +166,7 @@ export function apply(ctx: Context, config: Config) {
     primary: 'id',
     autoInc: true,
   })
+
   ctx.model.extend('player_2048_records', {
     id: 'unsigned',
     best: 'unsigned',
@@ -172,9 +181,9 @@ export function apply(ctx: Context, config: Config) {
     autoInc: true,
   })
 
-  // zjj*
+  // Middleware for shorthand commands
   ctx.middleware(async (session, next) => {
-    const {channelId, content, userId} = session;
+    const { channelId, content, userId } = session;
     if (!config.isMobileCommandMiddlewarePrefixFree) {
       return await next();
     }
@@ -184,10 +193,8 @@ export function apply(ctx: Context, config: Config) {
       return await next();
     }
 
-    // 未开启允许场外
     if (!config.allowNonPlayersToMove2048Tiles) {
-      // 不在游戏里
-      let getPlayer = await ctx.database.get('players_in_2048_playing', {channelId, userId})
+      let getPlayer = await ctx.database.get('players_in_2048_playing', { channelId, userId })
       if (getPlayer.length === 0) {
         return await next();
       }
@@ -202,305 +209,152 @@ export function apply(ctx: Context, config: Config) {
     }
   });
 
-  // 2048Game h*
   ctx.command('2048Game', '2048Game指令帮助')
-    .action(async ({session}) => {
+    .action(async ({ session }) => {
       await session.execute(`2048Game -h`)
     })
-  // j* jr*
+
   ctx.command('2048Game.加入 [money:number]', '加入游戏')
-    .action(async ({session}, money = 0) => {
-      // 如果玩家的玩家记录表中的用户名和当前的对不上，就为他更新一下名字~ 如果他还不在玩家记录表里，那就创建一个咯
-      let {channelId, userId, username, user} = session;
-      if (!channelId) {
-        // 在这里为私聊场景赋予一个 channelId
-        channelId = `privateChat_${userId}`;
-      }
-      // 玩家记录表操作(更新用户名)
+    .action(async ({ session }, money = 0) => {
+      let { channelId, userId, username, user } = session;
+      if (!channelId) channelId = `privateChat_${userId}`;
+
       await updateUserRecord(userId, username)
 
-      // 判断游戏是否已经开始，若开始，则不给你加入。 再输出一张当前游戏状态图片
-      // 游戏记录表操作
       const gameInfo = await getGameInfo(channelId);
-      const getPlayer = await ctx.database.get('players_in_2048_playing', {channelId, userId})
+      const getPlayer = await ctx.database.get('players_in_2048_playing', { channelId, userId })
+
       if (gameInfo.gameStatus !== '未开始') {
         if (getPlayer.length !== 0) {
-          const stateHtml = convertStateToHTML(gameInfo.progress)
-          const htmlGridContainer = generateGridHTML(gameInfo.gridSize);
-          const tilePositionHtml = generate2048TilePositionHtml(gameInfo.gridSize);
-          const gameContainerHtml = generate2048GameContainerHtml(gameInfo.gridSize);
-          const width = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
-          const height = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
-          const browser = ctx.puppeteer.browser
-          const context = await browser.createBrowserContext()
-          const page = await context.newPage()
-          const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
-          await page.goto('file://' + filePath);
-          await page.setViewport({width, height})
-          const html = `${htmlHead}
-.game-container .game-message p {
-            font-size: 60px;
-            font-weight: bold;
-            height: 60px;
-            line-height: 60px;
-            margin-top: ${(width - 50) / 2 - 28}px;
-        }
-.container {
-    width: ${width - 50}px;
-    margin: 0 auto;
-}
-${gameContainerHtml}
-${tilePositionHtml}
-    </style>
-</head>
-<body>
-<div class="container">
-    <div class="heading">
-        <div class="scores-container">
-            <div class="score-container">${gameInfo.score}</div>
-            <div class="best-container">${gameInfo.best}</div>
-        </div>
-    </div>
-    <div class="game-container">
-        ${htmlGridContainer}
-        <div class="tile-container">
-            ${stateHtml}
-        </div>
-    </div>
-</div>
-</body>
-</html>`
-          await page.setContent(html, {waitUntil: 'load'})
-          const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
-          await page.close();
-          await context.close()
+          const imageBuffer = await renderGameImage(ctx, gameInfo, config);
           return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n而且你还在游戏里面呢~！继续玩吧~\n${h.image(imageBuffer, `image/${config.imageType}`)}`);
         }
         return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n下次记得早点加入游戏呀！`);
       }
 
-      // 历史最高的玩家也要为他们更新用户名
       const bestPlayers = gameInfo.bestPlayers
       await updateBestPlayerUsername(bestPlayers, channelId, userId, username)
 
-      // 判断该玩家是否已经加入游戏，若已经加入，则提醒并为其修改投入货币的金额 （如果有正确输入的话）
-      // 判断该玩家有没有加入过游戏
       let isChange: boolean = false
       if (getPlayer.length !== 0) {
         if (money === 0) {
-          return await sendMessage(session, `【@${username}】
-您已经在游戏中了！
-修改金额的话...
-您得先告诉我想投多少呀~
-`)
+          return await sendMessage(session, `【@${username}】\n您已经在游戏中了！\n修改金额的话...\n您得先告诉我想投多少呀~`)
         } else {
-          // 修改金额 退钱 先判断投入货币的输入是否正确 正确的话
           isChange = true
           // @ts-ignore
           const uid = user.id;
           await ctx.monetary.gain(uid, getPlayer[0].money);
         }
       }
-      // 校验投入货币的输入
+
       if (typeof money !== 'number' || money < 0) {
         return await sendMessage(session, `【@${username}】\n你个笨蛋！\n投个钱也要别人教你嘛~`);
       }
-      // 判断该玩家投入的货币是否大于它的余额，如果没钱的话，就拒绝他的投入
+
       // @ts-ignore
       const uid = user.id;
-      let getUserMonetary = await ctx.database.get('monetary', {uid});
+      let getUserMonetary = await ctx.database.get('monetary', { uid });
       if (getUserMonetary.length === 0) {
-        await ctx.database.create('monetary', {uid, value: 0, currency: 'default'});
-        getUserMonetary = await ctx.database.get('monetary', {uid})
+        await ctx.database.create('monetary', { uid, value: 0, currency: 'default' });
+        getUserMonetary = await ctx.database.get('monetary', { uid })
       }
       const userMonetary = getUserMonetary[0]
-      // 投入金额过大
+
       if (money > config.maxInvestmentCurrency) {
-        return await sendMessage(session, `【@${username}】
-投入金额太多惹...
-知道你可能很有钱，哼~
-不过我们这个是小游戏好叭，别拿来刷钱呀！
-最大投入金额为：【${config.maxInvestmentCurrency}】`);
+        return await sendMessage(session, `【@${username}】\n投入金额太多惹...\n知道你可能很有钱，哼~ \n最大投入金额为：【${config.maxInvestmentCurrency}】`);
       }
 
       if (userMonetary.value < money) {
-        return await sendMessage(session, `【@${username}】
-笨蛋！
-赚钱的前提是有本金呐~
-您的余额为：【${userMonetary.value}】`);
+        return await sendMessage(session, `【@${username}】\n笨蛋！\n赚钱的前提是有本金呐~\n您的余额为：【${userMonetary.value}】`);
       }
 
-      // 满足条件，则为其更新信息，提示加入游戏和游戏人数
       await ctx.monetary.cost(uid, money);
-      // 如果是修改金额就先退钱，修改金额，不是的话就创建玩家
+
       if (isChange) {
-        await ctx.database.set('players_in_2048_playing', {channelId, userId}, {money})
+        await ctx.database.set('players_in_2048_playing', { channelId, userId }, { money })
       } else {
-        // 在游玩表中创建玩家
-        await ctx.database.create('players_in_2048_playing', {channelId, userId, username, money});
+        await ctx.database.create('players_in_2048_playing', { channelId, userId, username, money });
       }
 
-      // 获取当前玩家数量
-      const numberOfPlayers = (await ctx.database.get('players_in_2048_playing', {channelId})).length;
-      const stringWhenMoneyIs0 = `\n这个小游戏可以赚钱哦~\n当前倍率为：【${config.rewardMultiplier2048Win}】倍！
-想要投入金额的话...
-那就带上投入的金额数字！
-再加入一次游戏吧~`
-      const stringWhenMoneyIsNot0 = `\n投入金额：【${money}】
-当前倍率为：【${config.rewardMultiplier2048Win}】！
-想要修改金额的话...
-那就再加入一次咯~
-努力达到2048！
-为你加油~ 祝您好运捏~`
+      const numberOfPlayers = (await ctx.database.get('players_in_2048_playing', { channelId })).length;
+      const stringWhenMoneyIs0 = `\n这个小游戏可以赚钱哦~\n当前倍率为：【${config.rewardMultiplier2048Win}】倍！\n想要投入金额的话...\n那就带上投入的金额数字！`
+      const stringWhenMoneyIsNot0 = `\n投入金额：【${money}】\n当前倍率为：【${config.rewardMultiplier2048Win}】！\n想要修改金额的话...\n那就再加入一次咯~`
 
       if (isChange) {
-        return await sendMessage(session, `【@${username}】
-金额修改成功了呢！
-当前您投入的金额为：【${money}】
-倍率为：【${config.rewardMultiplier2048Win}】！
-一定要达到2048哦~加油！
-当前玩家人数：${numberOfPlayers} 名！`);
+        return await sendMessage(session, `【@${username}】\n金额修改成功了呢！\n当前您投入的金额为：【${money}】\n当前玩家人数：${numberOfPlayers} 名！`);
       }
-      return await sendMessage(session, `【@${username}】
-您成功加入游戏了!${money === 0 ? stringWhenMoneyIs0 : stringWhenMoneyIsNot0}
-当前玩家人数：${numberOfPlayers} 名！`);
-      // .action
+      return await sendMessage(session, `【@${username}】\n您成功加入游戏了!${money === 0 ? stringWhenMoneyIs0 : stringWhenMoneyIsNot0}\n当前玩家人数：${numberOfPlayers} 名！`);
     })
-  // q* tc*
+
   ctx.command('2048Game.退出', '退出游戏')
-    .action(async ({session}) => {
-      // 判断游戏是否已经开始，开始就无法退出 没开始判断玩家在不在游戏中，不在也无法退出 如果在游戏中，帮他退出，如果他投入钱了，那就把钱还给他
-      // 判断游戏是否已经开始，若开始，则不给你退出。
-      let {channelId, userId, username, user} = session;
-      if (!channelId) {
-        // 在这里为私聊场景赋予一个 channelId
-        channelId = `privateChat_${userId}`;
-      }
-      // 游戏记录表操作
+    .action(async ({ session }) => {
+      let { channelId, userId, username, user } = session;
+      if (!channelId) channelId = `privateChat_${userId}`;
+
       const gameInfo = await getGameInfo(channelId);
       if (gameInfo.gameStatus !== '未开始') {
         return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n不许逃跑！要认真对待呐~`);
       }
-      const getPlayer = await ctx.database.get('players_in_2048_playing', {channelId, userId})
+      const getPlayer = await ctx.database.get('players_in_2048_playing', { channelId, userId })
       if (getPlayer.length === 0) {
         return await sendMessage(session, `【@${username}】\n诶呀，你都没加入游戏！那你可退出不了~`);
       }
-      // 先还钱，再退出 0.0
+
       // @ts-ignore
       const uid = user.id;
       await ctx.monetary.gain(uid, getPlayer[0].money);
-      await ctx.database.remove('players_in_2048_playing', {channelId, userId})
-      const getUserMonetary = await ctx.database.get('monetary', {uid});
+      await ctx.database.remove('players_in_2048_playing', { channelId, userId })
+      const getUserMonetary = await ctx.database.get('monetary', { uid });
       const userMonetary = getUserMonetary[0]
-      const numberOfPlayers = (await ctx.database.get('players_in_2048_playing', {channelId})).length;
-      return await sendMessage(session, `【@${username}】\n您要走了嘛...\n那就下次再来玩吧~再见！\n别担心~如果你投了钱，我已经还给你啦！\n您当前的余额为：【${userMonetary.value}】\n剩余玩家人数：${numberOfPlayers} 名！`);
+      const numberOfPlayers = (await ctx.database.get('players_in_2048_playing', { channelId })).length;
+      return await sendMessage(session, `【@${username}】\n您要走了嘛...\n那就下次再来玩吧~再见！\n钱已经还给你啦！\n您当前的余额为：【${userMonetary.value}】\n剩余玩家人数：${numberOfPlayers} 名！`);
     })
-  // s* ks*
+
   ctx.command('2048Game.开始 [gridSize:number]', '开始游戏')
-    .action(async ({session}, gridSize = config.defaultGridSize2048) => {
-      // 娱乐模式退钱给他们
-      let {channelId, userId, username, user, platform} = session;
+    .action(async ({ session }, gridSize = config.defaultGridSize2048) => {
+      let { channelId, userId, username, platform } = session;
       if (typeof gridSize !== 'number' || gridSize < 4 || gridSize > 8) {
         return await sendMessage(session, `【@${username}】\n请输入有效的数字，范围应在 4 到 8 之间。`);
       }
-      // 判断游戏是否已经开始，没开始才能开始 判断玩家是否足够1，没玩家不开始 没开始且有玩家，那就开始吧，修改游戏状态并返回一张游戏初始状态图
-      if (!channelId) {
-        // 在这里为私聊场景赋予一个 channelId
-        channelId = `privateChat_${userId}`;
-      }
-      // 游戏记录表操作
+      if (!channelId) channelId = `privateChat_${userId}`;
+
       const gameInfo = await getGameInfo(channelId);
       if (gameInfo.gameStatus !== '未开始') {
-        return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n难道你想开始两次？\n那可不行！`);
+        return await sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n难道你想开始两次？`);
       }
-      const numberOfPlayers = (await ctx.database.get('players_in_2048_playing', {channelId})).length;
+      const numberOfPlayers = (await ctx.database.get('players_in_2048_playing', { channelId })).length;
       if (numberOfPlayers <= 0 && !config.allowNonPlayersToMove2048Tiles) {
         return await sendMessage(session, `【@${username}】\n笨蛋，还没有玩家加入游戏呢！才不给你开始~略略略~`);
       }
+
       const emptyGrid = createEmptyGrid(gridSize)
       const initialState = insertRandomElement(emptyGrid, 2);
-      const htmlGridContainer = generateGridHTML(gridSize);
-      const tilePositionHtml = generate2048TilePositionHtml(gridSize);
-      const gameContainerHtml = generate2048GameContainerHtml(gridSize);
-      const width = 107 * gridSize + 15 * (gridSize + 1) + 50
-      const height = 107 * gridSize + 15 * (gridSize + 1) + 50
-      await ctx.database.set('game_2048_records', {channelId}, {progress: initialState, gameStatus: '已开始', gridSize})
-      // console.log(JSON.stringify(initialState, null, 2));
-      const stateHtml = convertStateToHTML(initialState)
-      const browser = ctx.puppeteer.browser
-      const context = await browser.createBrowserContext()
-      const page = await context.newPage()
-      const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
-      await page.goto('file://' + filePath);
-      await page.setViewport({width, height})
-      // const zs = `        <div class="game-message game-over">
-      //       <p>Game Over!</p>
-      //       <div class="lower">
-      //           <a class="keep-playing-button">Keep going</a>
-      //           <a class="retry-button">Try again</a>
-      //       </div>
-      //   </div>`
-      const html = `${htmlHead}
-.game-container .game-message p {
-            font-size: 60px;
-            font-weight: bold;
-            height: 60px;
-            line-height: 60px;
-            margin-top: ${(width - 50) / 2 - 28}px;
-        }
-        .container {
-            width: ${width - 50}px;
-            margin: 0 auto;
-        }
-${gameContainerHtml}
-${tilePositionHtml}
-    </style>
-<body>
-<div class="container">
-    <div class="heading">
-        <div class="scores-container">
-            <div class="score-container">0</div>
-            <div class="best-container">${gameInfo.best}</div>
-        </div>
-    </div>
-    <div class="game-container">
-        ${htmlGridContainer}
 
-        <div class="tile-container">
-            ${stateHtml}
-        </div>
-    </div>
-</div>
-</body>
-</html>`
-      await page.setContent(html, {waitUntil: 'load'})
-      const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
-      await page.close();
-      await context.close()
+      // Update Game info first so render works
+      await ctx.database.set('game_2048_records', { channelId }, { progress: initialState, gameStatus: '已开始', gridSize })
+      const updatedGameInfo = await getGameInfo(channelId);
+
+      const imageBuffer = await renderGameImage(ctx, updatedGameInfo, config);
+
       if (gridSize !== 4) {
         const getUsers = await ctx.database.get('players_in_2048_playing', {})
         for (const player of getUsers) {
-          const {userId, username, money} = player;
+          const { userId, money } = player;
           const uid = (await ctx.database.getUser(platform, userId)).id
           await ctx.monetary.gain(uid, money)
         }
       }
       const gameModeMessage = gridSize === 4 ? '该局游戏是经典模式会记分哦~' : '该局游戏是娱乐模式不记分哦~\n投入的钱已经还给你们惹！';
-
-      const instructionMessage = `您现在可以输入指令进行移动啦~\n${h.image(imageBuffer, `image/${config.imageType}`)}\n可选指令参数有：\n【上/s/u】\n【下/x/d】\n【左/z/l】\n【右/y/r】\n可以一次性输入多个参数哦~\n指令使用示例：\n【移动指令名】 上下左右sxzyudlr`;
+      const instructionMessage = `您现在可以输入指令进行移动啦~\n${h.image(imageBuffer, `image/${config.imageType}`)}\n可选指令参数有：\n【上/s/u】\n【下/x/d】\n【左/z/l】\n【右/y/r】\n可以一次性输入多个参数哦~`;
 
       await sendMessage(session, `游戏开始咯！\n${gameModeMessage}\n${instructionMessage}`);
     })
-  // r* ck*
+
   ctx.command('2048Game.重置', '强制重置游戏')
-    .action(async ({session}) => {
-      // 游戏开了再重开 清空游戏中玩家 重置游戏状态 不退钱
-      let {channelId, userId, username, user} = session;
-      if (!channelId) {
-        // 在这里为私聊场景赋予一个 channelId
-        channelId = `privateChat_${userId}`;
-      }
-      // 游戏记录表操作
+    .action(async ({ session }) => {
+      let { channelId, userId, username } = session;
+      if (!channelId) channelId = `privateChat_${userId}`;
+
       const gameInfo = await getGameInfo(channelId);
       if (gameInfo.gameStatus === '未开始') {
         return await sendMessage(session, `【@${username}】\n游戏还没开始呢...\n好像不用重置吧~`);
@@ -508,15 +362,12 @@ ${tilePositionHtml}
       await reset2048Game(channelId)
       return await sendMessage(session, `【@${username}】\n既然你想要重置游戏的话...\n那就重来咯~不过呢...\n投的钱都归我咯~！`);
     })
-  // yd*
+
   ctx.command('2048Game.移动 [operation:text]', '进行移动操作')
-    .action(async ({session}, operation) => {
-      // 游戏是开始的 玩家是加入的 操作输入是正确的 操作是可行的
-      let {channelId, userId, username, user, platform} = session;
-      if (!channelId) {
-        // 在这里为私聊场景赋予一个 channelId
-        channelId = `privateChat_${userId}`;
-      }
+    .action(async ({ session }, operation) => {
+      let { channelId, userId, username, platform } = session;
+      if (!channelId) channelId = `privateChat_${userId}`;
+
       const gameInfo = await getGameInfo(channelId);
       if (gameInfo.isWon && !gameInfo.isKeepPlaying) {
         return await sendMessage(session, `【@${username}】\n你们已经赢了哦！\n等待最后操作者做出选择吧~`);
@@ -524,231 +375,160 @@ ${tilePositionHtml}
       if (gameInfo.gameStatus === '未开始') {
         return await sendMessage(session, `【@${username}】\n游戏还没开始呢~`);
       }
-      let getPlayer = await ctx.database.get('players_in_2048_playing', {channelId, userId})
+
+      let getPlayer = await ctx.database.get('players_in_2048_playing', { channelId, userId })
       if (getPlayer.length === 0) {
         if (config.allowNonPlayersToMove2048Tiles) {
-          // 新增该玩家，并更新 getPlayer
           await updateUserRecord(userId, username)
           await updateBestPlayerUsername(gameInfo.bestPlayers, channelId, userId, username)
-          // 在游玩表中创建玩家
-          await ctx.database.create('players_in_2048_playing', {channelId, userId, username, money: 0});
-          // getPlayer = await ctx.database.get('players_in_2048_playing', {channelId, userId})
+          await ctx.database.create('players_in_2048_playing', { channelId, userId, username, money: 0 });
         } else {
           return await sendMessage(session, `【@${username}】\n没加入游戏的话~移动不了哦！`);
         }
       }
+
       if (!operation) {
         await sendMessage(session, `【@${username}】\n请输入你想要进行的【移动操作】：\n可以一次输入多个操作~\n例如：左右上下左左右`)
         const userInput = await session.prompt()
         if (!userInput) return await sendMessage(session, `输入超时。`);
         operation = userInput
       }
+
       let state = gameInfo.progress
-      const originalState = JSON.parse(JSON.stringify(state)) as Cell[][]; // 创建 state 的深层副本，以避免对原始数据的修改
+      const originalState = JSON.parse(JSON.stringify(state)) as Cell[][];
+
       for (let i = 0; i < operation.length; i++) {
         let currentChar = operation[i];
-        if (currentChar === '上' || currentChar === 's' || currentChar === 'u') {
-          // 执行上的操作
+        const lowerChar = currentChar.toLowerCase();
+        if (['上', 's', 'u'].includes(lowerChar)) {
           await moveAndMergeUp(state, channelId)
-        } else if (currentChar === '下' || currentChar === 'x' || currentChar === 'd') {
-          // 执行下的操作
+        } else if (['下', 'x', 'd'].includes(lowerChar)) {
           await moveAndMergeDown(state, channelId)
-        } else if (currentChar === '左' || currentChar === 'z' || currentChar === 'l') {
-          // 执行左的操作
+        } else if (['左', 'z', 'l'].includes(lowerChar)) {
           await moveAndMergeLeft(state, channelId)
-        } else if (currentChar === '右' || currentChar === 'y' || currentChar === 'r') {
-          // 执行右的操作
+        } else if (['右', 'y', 'r'].includes(lowerChar)) {
           await moveAndMergeRight(state, channelId)
         }
+
         if (!compareStates(originalState, state)) {
-          // console.log(Math.pow(2, gameInfo.gridSize - 4))
           state = insertNewElements(state, Math.pow(2, gameInfo.gridSize - 4))
         }
       }
+
       const theHighestNumber = findHighestValue(state)
-      // 经典模式才记分才能赢
       let isWon: boolean = false
       if (gameInfo.gridSize === 4) {
         isWon = hasValue2048(state) || theHighestNumber > 2048;
         if (isWon) {
-          await ctx.database.set('game_2048_records', {channelId}, {isWon: true})
+          await ctx.database.set('game_2048_records', { channelId }, { isWon: true })
         }
       }
 
-      // 如果游戏没有继续的情况下才判断赢
       const isOver = isGameOver(state)
-      await ctx.database.set('game_2048_records', {channelId}, {progress: state})
-      const newGameInfo = await getGameInfo(channelId);
-      const stateHtml = convertStateToHTML(state)
-      const htmlGridContainer = generateGridHTML(gameInfo.gridSize);
-      const tilePositionHtml = generate2048TilePositionHtml(gameInfo.gridSize);
-      const gameContainerHtml = generate2048GameContainerHtml(gameInfo.gridSize);
-      const width = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
-      const height = 107 * gameInfo.gridSize + 15 * (gameInfo.gridSize + 1) + 50
-      const browser = ctx.puppeteer.browser
-      const context = await browser.createBrowserContext()
-      const page = await context.newPage()
-      const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
-      await page.goto('file://' + filePath);
-      await page.setViewport({width, height})
-      const gameOverHtml: string = `
-<div class="game-message game-over">
-    <p>你们输了!</p>
-    <div class="lower">
-          <a class="retry-button">下次一定</a>
-    </div>
-</div>`
-      const gameWonHtml: string = `
-<div class="game-message game-won">
-    <p>你们赢了!</p>
-    <div class="lower">
-        <a class="keep-playing-button">继续游戏</a>
-        <a class="retry-button">到此为止</a>
-    </div>
-</div>`
-      const html = `${htmlHead}
-.game-container .game-message p {
-            font-size: 60px;
-            font-weight: bold;
-            height: 60px;
-            line-height: 60px;
-            margin-top: ${(width - 50) / 2 - 28}px;
-        }
-        .container {
-            width: ${width - 50}px;
-            margin: 0 auto;
-        }
-${gameContainerHtml}
-${tilePositionHtml}
-    </style>
-<body>
-<div class="container">
-    <div class="heading">
-        <div class="scores-container">
-            <div class="score-container">${newGameInfo.score}</div>
-            <div class="best-container">${newGameInfo.best}</div>
-        </div>
-    </div>
-    <div class="game-container">
-        ${isOver ? gameOverHtml : ''}
-        ${isWon && !gameInfo.isKeepPlaying ? gameWonHtml : ''}
-        ${htmlGridContainer}
-        <div class="tile-container">
-            ${stateHtml}
-        </div>
-    </div>
-</div>
-</body>
-</html>`
+      await ctx.database.set('game_2048_records', { channelId }, { progress: state })
 
-      await page.setContent(html, {waitUntil: 'load'})
-      const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
-      await page.close();
-      await context.close()
-      const getUsers = await ctx.database.get('players_in_2048_playing', {channelId})
+      // Fetch updated info for rendering
+      const newGameInfo = await getGameInfo(channelId);
+
+      // Render image using helper
+      const imageBuffer = await renderGameImage(ctx, newGameInfo, config, isOver, isWon);
+
+      const getUsers = await ctx.database.get('players_in_2048_playing', { channelId })
       const theBest = newGameInfo.best
+
       if (gameInfo.gridSize === 4) {
         if (theHighestNumber > gameInfo.highestNumber) {
-          await ctx.database.set('game_2048_records', {channelId}, {highestNumber: theHighestNumber})
+          await ctx.database.set('game_2048_records', { channelId }, { highestNumber: theHighestNumber })
         }
         if (theBest > gameInfo.best) {
-          // 根据getUsers的所有元素生成一个新的json格式的数组
           const bestPlayers: BestPlayer[] = getUsers.map((player) => {
-            const {userId, username} = player;
-            return {userId, username};
+            const { userId, username } = player;
+            return { userId, username };
           });
-          await ctx.database.set('game_2048_records', {channelId}, {bestPlayers})
+          await ctx.database.set('game_2048_records', { channelId }, { bestPlayers })
         }
         for (const player of getUsers) {
-          const {userId, username, money} = player;
-          const [userRecord] = await ctx.database.get('player_2048_records', {userId})
+          const { userId } = player;
+          const [userRecord] = await ctx.database.get('player_2048_records', { userId })
           if (userRecord.best < theBest) {
-            await ctx.database.set('player_2048_records', {userId}, {
-              best: theBest,
-            })
+            await ctx.database.set('player_2048_records', { userId }, { best: theBest })
           }
           if (userRecord.highestNumber < theHighestNumber) {
-            await ctx.database.set('player_2048_records', {userId}, {
-              highestNumber: theHighestNumber,
-            })
+            await ctx.database.set('player_2048_records', { userId }, { highestNumber: theHighestNumber })
           }
         }
       }
 
-      // 输了就结束
+      // Lose condition
       if (!gameInfo.isKeepPlaying && isOver) {
-        // 判断游戏是否赢 赢了之后询问该最后一次操作的玩家 是否继续 继续的话就不重置游戏 不继续的话重置游戏状态
-        // 遍历 getUsers，对 money 不为 0 的玩家进行结算，为他们增加 money*2
         if (gameInfo.gridSize === 4) {
           for (const player of getUsers) {
-            const {userId, username, money} = player;
-            const [userRecord] = await ctx.database.get('player_2048_records', {userId})
-            await ctx.database.set('player_2048_records', {userId}, {
+            const { userId, money } = player;
+            const [userRecord] = await ctx.database.get('player_2048_records', { userId })
+            await ctx.database.set('player_2048_records', { userId }, {
               lose: userRecord.lose + 1,
               moneyChange: userRecord.moneyChange - money,
             })
           }
         }
-        // 重置游戏状态 发送游戏结束消息
         await reset2048Game(channelId)
         return await sendMessage(session, `游戏结束！\n你们输惹...\n但没关系，下次一定能行！${h.image(imageBuffer, `image/${config.imageType}`)}`)
       }
+
+      // Game Over after Keep Playing
       if (gameInfo.isKeepPlaying && isOver) {
         for (const player of getUsers) {
-          const {userId, username, money} = player;
-          const [userRecord] = await ctx.database.get('player_2048_records', {userId})
+          const { userId, money } = player;
+          const [userRecord] = await ctx.database.get('player_2048_records', { userId })
           const highestValue = findHighestValue(state)
 
           if (config.rewardHighNumbers) {
+            const multiplier = highestValue / 2048 - 1;
+            let reward = 0;
             if (config.incrementalRewardForHighNumbers) {
-              const uid = (await ctx.database.getUser(platform, userId)).id
-              await ctx.monetary.gain(uid, money * config.rewardMultiplier2048Win * (highestValue / 2048 - 1));
-              await ctx.database.set('player_2048_records', {userId}, {
-                moneyChange: userRecord.moneyChange + money * config.rewardMultiplier2048Win * (highestValue / 2048 - 1),
-              })
-              await ctx.database.set('players_in_2048_playing', {userId}, {money: money * config.rewardMultiplier2048Win * (highestValue / 2048 - 1)})
+              reward = money * config.rewardMultiplier2048Win * multiplier;
             } else {
-              const uid = (await ctx.database.getUser(platform, userId)).id
-              await ctx.monetary.gain(uid, money);
-              await ctx.database.set('player_2048_records', {userId}, {
-                moneyChange: userRecord.moneyChange + money * (highestValue / 2048 - 1),
-              })
-              await ctx.database.set('players_in_2048_playing', {userId}, {money: money * (highestValue / 2048 - 1)})
+              reward = money * multiplier;
             }
-          }
 
+            const uid = (await ctx.database.getUser(platform, userId)).id
+            await ctx.monetary.gain(uid, reward);
+            await ctx.database.set('player_2048_records', { userId }, {
+              moneyChange: userRecord.moneyChange + reward,
+            })
+            await ctx.database.set('players_in_2048_playing', { userId }, { money: reward })
+          }
         }
-        const getNewUsers = await ctx.database.get('players_in_2048_playing', {channelId})
-        // 生成结算字符串
+        const getNewUsers = await ctx.database.get('players_in_2048_playing', { channelId })
         let settlementResult = '';
         for (const player of getNewUsers) {
           if (player.money !== 0) {
-            const {username, money} = player;
+            const { username, money } = player;
             settlementResult += `【${username}】：【+${money}】\n`;
           }
         }
         await reset2048Game(channelId)
-        return await sendMessage(session, `游戏结束了哦！${h.image(imageBuffer, `image/${config.imageType}\n继续游戏后的结算结果如下：\n${settlementResult}`)}\n欢迎下次再来玩哦~`)
+        return await sendMessage(session, `游戏结束了哦！${h.image(imageBuffer, `image/${config.imageType}`)}\n继续游戏后的结算结果如下：\n${settlementResult}\n欢迎下次再来玩哦~`)
       }
+
+      // Win condition
       if (!gameInfo.isKeepPlaying && isWon) {
-        // 判断游戏是否赢 赢了之后询问该最后一次操作的玩家 是否继续 继续的话就不重置游戏 不继续的话重置游戏状态
-        // 遍历 getUsers，对 money 不为 0 的玩家进行结算，为他们增加 money*2
         for (const player of getUsers) {
-          const {userId, username, money} = player;
-          const [userRecord] = await ctx.database.get('player_2048_records', {userId})
-          await ctx.database.set('player_2048_records', {userId}, {
+          const { userId, money } = player;
+          const [userRecord] = await ctx.database.get('player_2048_records', { userId })
+          const winReward = money * config.rewardMultiplier2048Win;
+          await ctx.database.set('player_2048_records', { userId }, {
             win: userRecord.win + 1,
-            moneyChange: userRecord.moneyChange + money * config.rewardMultiplier2048Win,
+            moneyChange: userRecord.moneyChange + winReward,
           })
           const uid = (await ctx.database.getUser(platform, userId)).id
-          await ctx.monetary.gain(uid, money * config.rewardMultiplier2048Win);
+          await ctx.monetary.gain(uid, winReward);
         }
 
-        // 生成结算字符串
         let settlementResult = '';
         for (const player of getUsers) {
           if (player.money !== 0) {
-            const {username, money} = player;
+            const { username, money } = player;
             settlementResult += `【${username}】：【+${money * config.rewardMultiplier2048Win}】\n`;
           }
         }
@@ -759,10 +539,8 @@ ${tilePositionHtml}
         } else {
           await sendMessage(session, `2048！\n恭喜🎉你们赢了！\n${h.image(imageBuffer, `image/${config.imageType}`)}\n结算结果如下：\n${settlementResult}`)
         }
-        await sendMessage(session, `【@${username}】\n作为赢得游戏的最后操作者！\n您有权决定是否继续游戏，请选择：
-【继续游戏】或【到此为止】
-输入次数为：【3】
-注意：不选择的话游戏会自动结束哦~`)
+
+        await sendMessage(session, `【@${username}】\n作为赢得游戏的最后操作者！\n您有权决定是否继续游戏，请选择：\n【继续游戏】或【到此为止】\n输入次数为：【3】\n注意：不选择的话游戏会自动结束哦~`)
         let userInput = ''
         let inputNum = 0
         let isChoose: boolean = false
@@ -771,51 +549,10 @@ ${tilePositionHtml}
           ++inputNum
           if (userInput === '继续游戏') {
             isChoose = true
-            await ctx.database.set('game_2048_records', {channelId}, {isKeepPlaying: true})
-            const html = `${htmlHead}
-.game-container .game-message p {
-            font-size: 60px;
-            font-weight: bold;
-            height: 60px;
-            line-height: 60px;
-            margin-top: ${(width - 50) / 2 - 28}px;
-        }
-        .container {
-            width: ${width - 50}px;
-            margin: 0 auto;
-        }
-
-${gameContainerHtml}
-${tilePositionHtml}
-    </style>
-<body>
-<div class="container">
-    <div class="heading">
-        <div class="scores-container">
-            <div class="score-container">${newGameInfo.score}</div>
-            <div class="best-container">${newGameInfo.best}</div>
-        </div>
-    </div>
-    <div class="game-container">
-        ${htmlGridContainer}
-        <div class="tile-container">
-            ${stateHtml}
-        </div>
-    </div>
-</div>
-</body>
-</html>`
-            const browser = ctx.puppeteer.browser
-            const context = await browser.createBrowserContext()
-            const page = await context.newPage()
-            const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
-            await page.goto('file://' + filePath);
-            await page.setViewport({width, height})
-            await page.setContent(html, {waitUntil: 'load'})
-            const imageBuffer = await page.screenshot({fullPage: true, type: config.imageType})
-            await page.close();
-            await context.close()
-            return await sendMessage(session, `【@${username}】\n您选择了【继续游戏】！让我看看你们能走多远！\n祝你们接下来一路顺利呀~\n${h.image(imageBuffer, `image/${config.imageType}`)}`)
+            await ctx.database.set('game_2048_records', { channelId }, { isKeepPlaying: true })
+            // Render Keep Playing State
+            const keepPlayingBuffer = await renderGameImage(ctx, newGameInfo, config);
+            return await sendMessage(session, `【@${username}】\n您选择了【继续游戏】！让我看看你们能走多远！\n祝你们接下来一路顺利呀~\n${h.image(keepPlayingBuffer, `image/${config.imageType}`)}`)
           } else if (userInput === '到此为止') {
             isChoose = true
             await reset2048Game(channelId)
@@ -826,52 +563,33 @@ ${tilePositionHtml}
           await reset2048Game(channelId)
           await sendMessage(session, `最后操作者未做出选择，该局游戏结束咯~`)
         }
-
       }
-      // 返回游戏状态图
+      // Return state image
       return await sendMessage(session, `${h.image(imageBuffer, `image/${config.imageType}`)}`)
     })
-  // lszg*
+
   ctx.command('2048Game.历史最高', '查看历史最高记录')
     .option('across', '-a 跨群')
-    .action(async ({session, options}) => {
+    .action(async ({ session, options }) => {
       let result: string = ''
       if (options.across) {
         const getGamesAcross: GameRecord[] = await ctx.database.get('game_2048_records', {})
         if (getGamesAcross.length === 0) {
           return await sendMessage(session, `未找到任何游戏记录。`)
         }
-        // 根据 getGamesAcross 得到 best 最大的那个元素
         const highestBest = getGamesAcross.reduce((prev, current) => (prev.best > current.best) ? prev : current, {} as GameRecord);
-
-        // 获取最高分所在的索引
-        // const indexOfHighestBest = getGamesAcross.findIndex(game => game.best === highestBest.best);
-
-        // 动态生成 bestPlayers 部分
         const bestPlayersList = highestBest.bestPlayers.map(player => `【${player.username}】`).join('\n');
-
-        // 整合到结果字符串中
-        result = `跨群历史最高数：【${highestBest.highestNumber}】
-跨群历史最高分为：【${highestBest.best}】
-参与的玩家如下：
-${bestPlayersList}`;
+        result = `跨群历史最高数：【${highestBest.highestNumber}】\n跨群历史最高分为：【${highestBest.best}】\n参与的玩家如下：\n${bestPlayersList}`;
       } else {
         const gameInfo: GameRecord = await getGameInfo(session.channelId)
-        // 动态生成 bestPlayers 部分
         const bestPlayersList = gameInfo.bestPlayers.map(player => `【${player.username}】`).join('\n');
-        result = `历史最高数：【${gameInfo.highestNumber}】
-历史最高分为：【${gameInfo.best}】
-参与的玩家如下：
-${bestPlayersList}`;
+        result = `历史最高数：【${gameInfo.highestNumber}】\n历史最高分为：【${gameInfo.best}】\n参与的玩家如下：\n${bestPlayersList}`;
       }
-
       return await sendMessage(session, result)
-      // .action
     })
 
-  // r* phb*
   ctx.command('2048Game.排行榜 [number:number]', '查看排行榜相关指令')
-    .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
+    .action(async ({ session }, number = config.defaultMaxLeaderboardEntries) => {
       if (typeof number !== 'number' || isNaN(number) || number < 0) {
         return '请输入大于等于 0 的数字作为排行榜的参数。';
       }
@@ -881,75 +599,45 @@ ${bestPlayersList}`;
         "3": `2048Game.排行榜.最高分数 ${number}`,
         "4": `2048Game.排行榜.最高数字 ${number}`,
         "5": `2048Game.排行榜.损益 ${number}`,
-        "胜场排行榜": `2048Game.排行榜.胜场 ${number}`,
-        "输场排行榜": `2048Game.排行榜.输场 ${number}`,
-        "最高分数排行榜": `2048Game.排行榜.最高分数 ${number}`,
-        "最高数字排行榜": `2048Game.排行榜.最高数字 ${number}`,
-        "损益排行榜": `2048Game.排行榜.损益 ${number}`,
       };
 
-      await sendMessage(session, `当前可查看排行榜如下：
-1. 胜场排行榜
-2. 输场排行榜
-3. 最高分数排行榜
-4. 最高数字排行榜
-5. 损益排行榜
-请输入想要查看的【排行榜名】或【序号】：`);
-
+      await sendMessage(session, `当前可查看排行榜如下：\n1. 胜场排行榜\n2. 输场排行榜\n3. 最高分数排行榜\n4. 最高数字排行榜\n5. 损益排行榜\n请输入想要查看的【排行榜名】或【序号】：`);
       const userInput = await session.prompt();
       if (!userInput) return sendMessage(session, `输入超时。`);
-
-      const selectedLeaderboard = leaderboards[userInput];
-      if (selectedLeaderboard) {
-        await session.execute(selectedLeaderboard);
+      const selectedLeaderboard = leaderboards[userInput] || leaderboards[Object.keys(leaderboards).find(k => k.includes(userInput))]; // Fuzzy match logic if needed or strict
+      if (leaderboards[userInput]) {
+        await session.execute(leaderboards[userInput]);
       } else {
-        return sendMessage(session, `无效的输入。`);
+        // Check named keys
+        if (['胜场', '输场', '最高分数', '最高数字', '损益'].some(k => userInput.includes(k))) {
+           const key = Object.keys(leaderboards).find(k => k.includes(userInput) && k.length > 1);
+           if(key) await session.execute(leaderboards[key]);
+           else return sendMessage(session, `无效的输入。`);
+        } else {
+           return sendMessage(session, `无效的输入。`);
+        }
       }
     });
 
-  ctx.command('2048Game.排行榜.胜场 [number:number]', '查看玩家胜场排行榜')
-    .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
-      if (typeof number !== 'number' || isNaN(number) || number < 0) {
-        return '请输入大于等于 0 的数字作为排行榜的参数。';
-      }
-      return await getLeaderboard(session, 'win', 'win', '玩家胜场排行榜', number);
-    });
+  ['胜场', '输场', '最高分数', '最高数字', '损益'].forEach(type => {
+    const fieldMap = {
+      '胜场': { field: 'win', title: '玩家胜场排行榜', unit: '次' },
+      '输场': { field: 'lose', title: '玩家输场排行榜', unit: '次' },
+      '最高分数': { field: 'best', title: '玩家最高分排行榜', unit: '分' },
+      '最高数字': { field: 'highestNumber', title: '玩家最高数字排行榜', unit: '' },
+      '损益': { field: 'moneyChange', title: '玩家损益排行榜', unit: '点' }
+    };
+    ctx.command(`2048Game.排行榜.${type} [number:number]`, `查看${type}排行榜`)
+      .action(async ({ session }, number = config.defaultMaxLeaderboardEntries) => {
+        if (typeof number !== 'number' || isNaN(number) || number < 0) return '请输入大于等于 0 的数字。';
+        const info = fieldMap[type];
+        return await getLeaderboard(session, info.field, info.field, info.title, number, info.unit);
+      });
+  });
 
-  ctx.command('2048Game.排行榜.输场 [number:number]', '查看玩家输场排行榜')
-    .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
-      if (typeof number !== 'number' || isNaN(number) || number < 0) {
-        return '请输入大于等于 0 的数字作为排行榜的参数。';
-      }
-      return await getLeaderboard(session, 'lose', 'lose', '玩家输场排行榜', number);
-    });
-
-  ctx.command('2048Game.排行榜.最高分数 [number:number]', '查看玩家最高分排行榜')
-    .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
-      if (typeof number !== 'number' || isNaN(number) || number < 0) {
-        return '请输入大于等于 0 的数字作为排行榜的参数。';
-      }
-      return await getLeaderboard(session, 'best', 'best', '玩家最高分排行榜', number);
-    });
-
-  ctx.command('2048Game.排行榜.最高数字 [number:number]', '查看玩家最高数字排行榜')
-    .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
-      if (typeof number !== 'number' || isNaN(number) || number < 0) {
-        return '请输入大于等于 0 的数字作为排行榜的参数。';
-      }
-      return await getLeaderboard(session, 'highestNumber', 'highestNumber', '玩家最高数字排行榜', number);
-    });
-
-  ctx.command('2048Game.排行榜.损益 [number:number]', '查看玩家损益排行榜')
-    .action(async ({session}, number = config.defaultMaxLeaderboardEntries) => {
-      if (typeof number !== 'number' || isNaN(number) || number < 0) {
-        return '请输入大于等于 0 的数字作为排行榜的参数。';
-      }
-      return await getLeaderboard(session, 'moneyChange', 'moneyChange', '玩家损益排行榜', number);
-    });
-  // cx*
   ctx.command('2048Game.查询玩家记录 [targetUser:text]', '查询玩家记录')
-    .action(async ({session}, targetUser) => {
-      let {channelId, userId, username} = session
+    .action(async ({ session }, targetUser) => {
+      let { channelId, userId, username } = session
       if (targetUser) {
         targetUser = await replaceAtTags(session, targetUser)
         const userIdRegex = /<at id="([^"]+)"(?: name="([^"]+)")?\/>/;
@@ -957,81 +645,57 @@ ${bestPlayersList}`;
         userId = match?.[1] ?? userId;
         username = match?.[2] ?? username;
       }
-      const targetUserRecord = await ctx.database.get('player_2048_records', {userId})
+      const targetUserRecord = await ctx.database.get('player_2048_records', { userId })
       if (targetUserRecord.length === 0) {
         await ctx.database.create('player_2048_records', {
-          userId,
-          username,
-          lose: 0,
-          win: 0,
-          moneyChange: 0,
-          best: 0,
-          highestNumber: 0
+          userId, username, lose: 0, win: 0, moneyChange: 0, best: 0, highestNumber: 0
         })
-        return sendMessage(session, `查询对象：${username}
-无任何游戏记录。`)
+        return sendMessage(session, `查询对象：${username}\n无任何游戏记录。`)
       }
-      const {win, lose, moneyChange, best, highestNumber} = targetUserRecord[0]
-      return sendMessage(session, `查询对象：${username}
-最高数字为：${highestNumber}
-最高分数为：${best} 分
-胜场次数为：${win} 次
-输场次数为：${lose} 次
-损益为：${moneyChange} 点
-`)
+      const { win, lose, moneyChange, best, highestNumber } = targetUserRecord[0]
+      return sendMessage(session, `查询对象：${username}\n最高数字为：${highestNumber}\n最高分数为：${best} 分\n胜场次数为：${win} 次\n输场次数为：${lose} 次\n损益为：${moneyChange} 点`)
     });
 
-  // ch*
+  // --- Helpers within apply ---
 
   async function updateBestPlayerUsername(bestPlayers: any[], channelId, userId, username: string,) {
     if (bestPlayers.length !== 0) {
-      // 寻找 playerId 与 userId 相同的元素
       const playerIndex = bestPlayers.findIndex(player => player.userId === userId);
-      // 如果找到了相同的 playerId
       if (playerIndex !== -1) {
-        // 判断 username 和 playerName 是否一样，如果不一样，就将 playerName 改成 username
         if (bestPlayers[playerIndex].username !== username) {
           bestPlayers[playerIndex].username = username;
-          await ctx.database.set('game_2048_records', {channelId}, {bestPlayers})
+          await ctx.database.set('game_2048_records', { channelId }, { bestPlayers })
         }
       }
     }
   }
 
   async function updateUserRecord(userId: string, username: string): Promise<void> {
-    const userRecord = await ctx.database.get('player_2048_records', {userId});
+    const userRecord = await ctx.database.get('player_2048_records', { userId });
     if (userRecord.length === 0) {
       await ctx.database.create('player_2048_records', {
-        userId,
-        username,
-        best: 0,
-        win: 0,
-        lose: 0,
-        moneyChange: 0,
-        highestNumber: 0
+        userId, username, best: 0, win: 0, lose: 0, moneyChange: 0, highestNumber: 0
       });
     } else if (username !== userRecord[0].username) {
-      await ctx.database.set('player_2048_records', {userId}, {username});
+      await ctx.database.set('player_2048_records', { userId }, { username });
     }
   }
 
-
-  // 生成排行榜
-  async function getLeaderboard(session: any, type: string, sortField: string, title: string, number: number) {
+  async function getLeaderboard(session: any, type: string, sortField: string, title: string, number: number, unit: string = '') {
     const getPlayers: PlayerRecord[] = await ctx.database.get('player_2048_records', {})
     const sortedPlayers = getPlayers.sort((a, b) => b[sortField] - a[sortField])
     const topPlayers = sortedPlayers.slice(0, number)
 
     let result = `${title}：\n`;
     topPlayers.forEach((player, index) => {
-      result += `${index + 1}. ${player.username}：${player[sortField]} ${(type === 'best') ? '分' : (type === 'moneyChange') ? '点' : (type === 'highestNumber') ? '' : '次'}\n`
+      result += `${index + 1}. ${player.username}：${player[sortField]} ${unit}\n`
     })
     return await sendMessage(session, result);
   }
 
   async function reset2048Game(channelId: string): Promise<void> {
-    await ctx.database.remove('players_in_2048_playing', {channelId});
-    await ctx.database.set('game_2048_records', {channelId}, {
+    await ctx.database.remove('players_in_2048_playing', { channelId });
+    await ctx.database.set('game_2048_records', { channelId }, {
       progress: [
         [null, null, null, null],
         [null, null, null, null],
@@ -1045,187 +709,130 @@ ${bestPlayersList}`;
     });
   }
 
-
-  // 向上移动并合并
   async function moveAndMergeUp(state: Cell[][], channelId) {
-    // const newState = JSON.parse(JSON.stringify(state)); // 创建 state 的深层副本，以避免对原始数据的修改
-
     for (let col = 0; col < state[0].length; col++) {
-      let mergeIndex = -1; // 用于记录合并位置的索引
-
+      let mergeIndex = -1;
       for (let row = 1; row < state.length; row++) {
         if (state[row][col]) {
           let currentRow = row;
-
           while (currentRow > 0) {
             if (!state[currentRow - 1][col]) {
-              // 如果上方格子为空，则移动当前格子到上方
               --state[currentRow][col].position.x
               state[currentRow - 1][col] = state[currentRow][col];
               state[currentRow][col] = null;
               currentRow--;
             } else if (state[currentRow - 1][col].value === state[currentRow][col].value && currentRow - 1 !== mergeIndex) {
-              // 如果上方格子的值与当前格子相等且上方格子未参与过合并，则合并两个格子的值
               state[currentRow - 1][col].value *= 2;
-              const gameInfo = await getGameInfo(channelId)
-              const score = gameInfo.score + state[currentRow - 1][col].value
-              if (score > gameInfo.best && gameInfo.gridSize === 4) {
-                await ctx.database.set('game_2048_records', {channelId}, {score, best: score})
-              } else {
-                await ctx.database.set('game_2048_records', {channelId}, {score})
-              }
+              await updateScore(channelId, state[currentRow - 1][col].value);
               state[currentRow][col] = null;
               mergeIndex = currentRow - 1;
               break;
             } else {
-              // 如果上方格子的值与当前格子不相等或者上方格子已参与过合并，则停止移动
               break;
             }
           }
         }
       }
     }
-
     return state;
   }
 
-  // 向下移动并合并
-  async function moveAndMergeDown(state, channelId) {
-    // const newState = JSON.parse(JSON.stringify(state)); // 创建 state 的深层副本，以避免对原始数据的修改
-
+  async function moveAndMergeDown(state: Cell[][], channelId) {
     for (let col = 0; col < state[0].length; col++) {
-      let mergeIndex = -1; // 用于记录合并位置的索引
-
+      let mergeIndex = -1;
       for (let row = state.length - 2; row >= 0; row--) {
         if (state[row][col]) {
           let currentRow = row;
-
           while (currentRow < state.length - 1) {
             if (!state[currentRow + 1][col]) {
-              // 如果下方格子为空，则移动当前格子到下方
               ++state[currentRow][col].position.x
               state[currentRow + 1][col] = state[currentRow][col];
               state[currentRow][col] = null;
               currentRow++;
             } else if (state[currentRow + 1][col].value === state[currentRow][col].value && currentRow + 1 !== mergeIndex) {
-              // 如果下方格子的值与当前格子相等且下方格子未参与过合并，则合并两个格子的值
               state[currentRow + 1][col].value *= 2;
-
-              const gameInfo = await getGameInfo(channelId)
-              const score = gameInfo.score + state[currentRow + 1][col].value
-              if (score > gameInfo.best && gameInfo.gridSize === 4) {
-                await ctx.database.set('game_2048_records', {channelId}, {score, best: score})
-              } else {
-                await ctx.database.set('game_2048_records', {channelId}, {score})
-              }
-
+              await updateScore(channelId, state[currentRow + 1][col].value);
               state[currentRow][col] = null;
               mergeIndex = currentRow + 1;
               break;
             } else {
-              // 如果下方格子的值与当前格子不相等或者下方格子已参与过合并，则停止移动
               break;
             }
           }
         }
       }
     }
-
     return state;
   }
 
-  // 向左移动并合并
-  async function moveAndMergeLeft(state, channelId) {
-    // const newState = JSON.parse(JSON.stringify(state)); // 创建 state 的深层副本，以避免对原始数据的修改
-
+  async function moveAndMergeLeft(state: Cell[][], channelId) {
     for (let row = 0; row < state.length; row++) {
-      let mergeIndex = -1; // 用于记录合并位置的索引
-
+      let mergeIndex = -1;
       for (let col = 1; col < state[row].length; col++) {
         if (state[row][col]) {
           let currentCol = col;
-
           while (currentCol > 0) {
             if (!state[row][currentCol - 1]) {
-              // 如果左侧格子为空，则移动当前格子到左侧
               --state[row][currentCol].position.y
               state[row][currentCol - 1] = state[row][currentCol];
               state[row][currentCol] = null;
               currentCol--;
             } else if (state[row][currentCol - 1].value === state[row][currentCol].value && currentCol - 1 !== mergeIndex) {
-              // 如果左侧格子的值与当前格子相等且左侧格子未参与过合并，则合并两个格子的值
               state[row][currentCol - 1].value *= 2;
-
-              const gameInfo = await getGameInfo(channelId)
-              const score = gameInfo.score + state[row][currentCol - 1].value
-              if (score > gameInfo.best && gameInfo.gridSize === 4) {
-                await ctx.database.set('game_2048_records', {channelId}, {score, best: score})
-              } else {
-                await ctx.database.set('game_2048_records', {channelId}, {score})
-              }
-
+              await updateScore(channelId, state[row][currentCol - 1].value);
               state[row][currentCol] = null;
               mergeIndex = currentCol - 1;
               break;
             } else {
-              // 如果左侧格子的值与当前格子不相等或者左侧格子已参与过合并，则停止移动
               break;
             }
           }
         }
       }
     }
-
     return state;
   }
 
-  // 向右移动并合并
-  async function moveAndMergeRight(state, channelId) {
-    // const newState = JSON.parse(JSON.stringify(state)); // 创建 state 的深层副本，以避免对原始数据的修改
-
+  async function moveAndMergeRight(state: Cell[][], channelId) {
     for (let row = 0; row < state.length; row++) {
-      let mergeIndex = -1; // 用于记录合并位置的索引
-
+      let mergeIndex = -1;
       for (let col = state[row].length - 2; col >= 0; col--) {
         if (state[row][col]) {
           let currentCol = col;
-
           while (currentCol < state[row].length - 1) {
             if (!state[row][currentCol + 1]) {
-              // 如果右侧格子为空，则移动当前格子到右侧
               ++state[row][currentCol].position.y
               state[row][currentCol + 1] = state[row][currentCol];
               state[row][currentCol] = null;
               currentCol++;
             } else if (state[row][currentCol + 1].value === state[row][currentCol].value && currentCol + 1 !== mergeIndex) {
-              // 如果右侧格子的值与当前格子相等且右侧格子未参与过合并，则合并两个格子的值
               state[row][currentCol + 1].value *= 2;
-
-              const gameInfo = await getGameInfo(channelId)
-              const score = gameInfo.score + state[row][currentCol + 1].value
-              if (score > gameInfo.best && gameInfo.gridSize === 4) {
-                await ctx.database.set('game_2048_records', {channelId}, {score, best: score})
-              } else {
-                await ctx.database.set('game_2048_records', {channelId}, {score})
-              }
-
+              await updateScore(channelId, state[row][currentCol + 1].value);
               state[row][currentCol] = null;
               mergeIndex = currentCol + 1;
               break;
             } else {
-              // 如果右侧格子的值与当前格子不相等或者右侧格子已参与过合并，则停止移动
               break;
             }
           }
         }
       }
     }
-
     return state;
   }
 
+  async function updateScore(channelId: string, addedScore: number) {
+    const gameInfo = await getGameInfo(channelId)
+    const score = gameInfo.score + addedScore
+    if (score > gameInfo.best && gameInfo.gridSize === 4) {
+      await ctx.database.set('game_2048_records', { channelId }, { score, best: score })
+    } else {
+      await ctx.database.set('game_2048_records', { channelId }, { score })
+    }
+  }
+
   async function getGameInfo(channelId: string): Promise<GameRecord> {
-    let gameRecord = await ctx.database.get('game_2048_records', {channelId});
+    let gameRecord = await ctx.database.get('game_2048_records', { channelId });
     if (gameRecord.length === 0) {
       await ctx.database.create('game_2048_records', {
         channelId,
@@ -1243,22 +850,21 @@ ${bestPlayersList}`;
         bestPlayers: [],
         highestNumber: 0,
       });
-      gameRecord = await ctx.database.get('game_2048_records', {channelId});
+      gameRecord = await ctx.database.get('game_2048_records', { channelId });
     }
     return gameRecord[0];
   }
 
-  // csh*
   let sentMessages = [];
 
   async function sendMessage(session: any, message: any): Promise<void> {
-    const {bot, channelId} = session;
+    const { bot, channelId } = session;
     let messageId;
-    if (config.isTextToImageConversionEnabled) {
+    if (config.isTextToImageConversionEnabled && typeof message === 'string') {
       const lines = message.split('\n');
       const isOnlyImgTag = lines.length === 1 && lines[0].trim().startsWith('<img');
       if (isOnlyImgTag) {
-        await session.send(message);
+        [messageId] = await session.send(message);
       } else {
         const modifiedMessage = lines
           .map((line) => {
@@ -1282,44 +888,110 @@ ${bestPlayersList}`;
     if (sentMessages.length > 1) {
       const oldestMessageId = sentMessages.shift();
       setTimeout(async () => {
-        await bot.deleteMessage(channelId, oldestMessageId);
+        try {
+          await bot.deleteMessage(channelId, oldestMessageId);
+        } catch (e) { }
       }, config.retractDelay * 1000);
     }
   }
 
-  // apply
+  // --- Helper to render the game image ---
+  async function renderGameImage(ctx: Context, gameInfo: GameRecord, config: Config, isOver: boolean = false, isWon: boolean = false): Promise<Buffer> {
+    const { gridSize, progress, score, best, isKeepPlaying } = gameInfo;
+    const htmlGridContainer = generateGridHTML(gridSize);
+    const tilePositionHtml = generate2048TilePositionHtml(gridSize);
+    const gameContainerHtml = generate2048GameContainerHtml(gridSize);
+    const stateHtml = convertStateToHTML(progress);
+
+    const width = 107 * gridSize + 15 * (gridSize + 1) + 50;
+    const height = 107 * gridSize + 15 * (gridSize + 1) + 50;
+
+    const gameOverHtml = `
+    <div class="game-message game-over">
+        <p>你们输了!</p>
+        <div class="lower">
+              <a class="retry-button">下次一定</a>
+        </div>
+    </div>`;
+    const gameWonHtml = `
+    <div class="game-message game-won">
+        <p>你们赢了!</p>
+        <div class="lower">
+            <a class="keep-playing-button">继续游戏</a>
+            <a class="retry-button">到此为止</a>
+        </div>
+    </div>`;
+
+    const html = `${htmlHead}
+    .game-container .game-message p {
+        font-size: 60px;
+        font-weight: bold;
+        height: 60px;
+        line-height: 60px;
+        margin-top: ${(width - 50) / 2 - 28}px;
+    }
+    .container {
+        width: ${width - 50}px;
+        margin: 0 auto;
+    }
+    ${gameContainerHtml}
+    ${tilePositionHtml}
+    </style>
+    <body>
+    <div class="container">
+        <div class="heading">
+            <div class="scores-container">
+                <div class="score-container">${score}</div>
+                <div class="best-container">${best}</div>
+            </div>
+        </div>
+        <div class="game-container">
+            ${isOver ? gameOverHtml : ''}
+            ${isWon && !isKeepPlaying ? gameWonHtml : ''}
+            ${htmlGridContainer}
+            <div class="tile-container">
+                ${stateHtml}
+            </div>
+        </div>
+    </div>
+    </body>
+    </html>`;
+
+    const browser = ctx.puppeteer.browser;
+    const context = await browser.createBrowserContext();
+    const page = await context.newPage();
+    // Using a file protocol here to potentially load local assets if configured,
+    // or just to set a base URL.
+    const filePath = path.join(__dirname, 'emptyHtml.html').replace(/\\/g, '/');
+    await page.goto('file://' + filePath);
+    await page.setViewport({ width, height });
+    await page.setContent(html, { waitUntil: 'load' });
+    const imageBuffer = await page.screenshot({ fullPage: true, type: config.imageType });
+    await page.close();
+    await context.close();
+    return imageBuffer as Buffer;
+  }
 }
 
-// hs*
-async function replaceAtTags(session, content: string): Promise<string> {
-  // 正则表达式用于匹配 at 标签
-  const atRegex = /<at id="(\d+)"(?: name="([^"]*)")?\/>/g;
+// --- Independent Utils ---
 
-  // 匹配所有 at 标签
+async function replaceAtTags(session, content: string): Promise<string> {
+  const atRegex = /<at id="(\d+)"(?: name="([^"]*)")?\/>/g;
   let match;
   while ((match = atRegex.exec(content)) !== null) {
     const userId = match[1];
     const name = match[2];
-
-    // 如果 name 不存在，根据 userId 获取相应的 name
     if (!name) {
       let guildMember;
       try {
         guildMember = await session.bot.getGuildMember(session.guildId, userId);
       } catch (error) {
-        guildMember = {
-          user: {
-            name: '未知用户',
-          },
-        };
+        guildMember = { user: { name: '未知用户' } };
       }
-
-      // 替换原始的 at 标签
       const newAtTag = `<at id="${userId}" name="${guildMember.user.name}"/>`;
       content = content.replace(match[0], newAtTag);
     }
   }
-
   return content;
 }
 
@@ -1329,62 +1001,40 @@ function generate2048GameContainerHtml(gridSize: number): string {
   const containerWidth = cellSize * gridSize + marginSize * (gridSize + 1);
   const containerHeight = cellSize * gridSize + marginSize * (gridSize + 1);
 
-  const style = `
+  return `
     .game-container {
       margin-top: 20px;
       position: relative;
       padding: 15px;
       cursor: default;
-      -webkit-touch-callout: none;
-      -ms-touch-callout: none;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      -ms-touch-action: none;
-      user-select: none;
-      touch-action: none;
       background: #bbada0;
       border-radius: 6px;
       width: ${containerWidth}px;
       height: ${containerHeight}px;
-      -webkit-box-sizing: border-box;
-      -moz-box-sizing: border-box;
       box-sizing: border-box;
     }
   `;
-
-  return style;
 }
 
 function generate2048TilePositionHtml(gridSize: number): string {
   let styleString = "";
-
   for (let i = 1; i <= gridSize; i++) {
     for (let j = 1; j <= gridSize; j++) {
       const transformX = (i - 1) * 121;
       const transformY = (j - 1) * 121;
       const className = `.tile.tile-position-${i}-${j}`;
-
-      const tileStyle = `
-                ${className} {
-                    -webkit-transform: translate(${transformX}px, ${transformY}px);
-                    -moz-transform: translate(${transformX}px, ${transformY}px);
-                    transform: translate(${transformX}px, ${transformY}px);
-                }
-            `;
-
-      styleString += tileStyle;
+      styleString += `
+          ${className} {
+              transform: translate(${transformX}px, ${transformY}px);
+          }
+      `;
     }
   }
-
   return styleString;
 }
 
-
-// 生成指定大小的网格的 HTML 元素
 function generateGridHTML(size: number): string {
   let gridHTML = '<div class="grid-container">\n';
-
   for (let i = 0; i < size; i++) {
     gridHTML += '    <div class="grid-row">\n';
     for (let j = 0; j < size; j++) {
@@ -1392,186 +1042,126 @@ function generateGridHTML(size: number): string {
     }
     gridHTML += '    </div>\n';
   }
-
   gridHTML += '</div>';
-
   return gridHTML;
 }
 
 function insertNewElements(state: Cell[][], elementCount: number): Cell[][] {
   const emptyCells: Position[] = [];
-  // 找到所有空位置
   for (let i = 0; i < state.length; i++) {
     for (let j = 0; j < state[i].length; j++) {
       if (state[i][j] === null || state[i][j].value === null || state[i][j].position === null) {
-        emptyCells.push({x: i, y: j});
+        emptyCells.push({ x: i, y: j });
       }
     }
   }
 
-  // 如果没有空位置，不进行任何操作
-  if (emptyCells.length === 0) {
-    return state;
-  }
+  if (emptyCells.length === 0) return state;
 
-  // 根据elementCount确定要插入的元素个数
   const insertCount = Math.min(elementCount, emptyCells.length);
-
-  // 从空位置中随机选取位置并插入新元素
   const newState = state.map(row => [...row]);
   for (let k = 0; k < insertCount; k++) {
     const randomIndex = Math.floor(Math.random() * emptyCells.length);
     const randomPosition = emptyCells[randomIndex];
-
-    // 随机生成新元素的值
     const value = Math.random() < 0.9 ? 2 : 4;
-
-    // 在选定的位置插入新元素
     newState[randomPosition.x][randomPosition.y] = {
-      position: {x: randomPosition.x, y: randomPosition.y},
+      position: { x: randomPosition.x, y: randomPosition.y },
       value: value
     };
-
-    // 移除已经插入的位置，避免重复插入
     emptyCells.splice(randomIndex, 1);
   }
-
   return newState;
 }
 
-
-function compareStates(originalState: any, state: any): boolean {
-  // 如果两个state的维度不同，则返回false
+function compareStates(originalState: Cell[][], state: Cell[][]): boolean {
   if (originalState.length !== state.length || originalState[0].length !== state[0].length) {
     return false;
   }
-
-  // 逐个比较数组中的元素是否相等
   for (let i = 0; i < originalState.length; i++) {
     for (let j = 0; j < originalState[i].length; j++) {
-      const originalItem = originalState[i][j];
-      const item = state[i][j];
-
-      // 如果元素不相等，则返回false
-      if (JSON.stringify(originalItem) !== JSON.stringify(item)) {
+      if (JSON.stringify(originalState[i][j]) !== JSON.stringify(state[i][j])) {
         return false;
       }
     }
   }
-
-  // 所有的元素都相等，返回true
   return true;
 }
 
-function findHighestValue(state: Cell[][]): number | null {
-  let highestValue: number | null = null;
-
+function findHighestValue(state: Cell[][]): number {
+  let highestValue = 0;
   for (let row of state) {
     for (let cell of row) {
       if (cell && cell.value !== null) {
-        if (highestValue === null || cell.value > highestValue) {
+        if (cell.value > highestValue) {
           highestValue = cell.value;
         }
       }
     }
   }
-
   return highestValue;
 }
 
 function isGameOver(state: Cell[][]): boolean {
-  // 判断是否还有空位
   for (let row of state) {
     for (let cell of row) {
-      if (cell === null || cell.position === null) { // 先判断 cell 是否为 null
-        return false; // 游戏未结束
-      }
+      if (cell === null || cell.position === null) return false;
     }
   }
-
-  // 判断上下左右移动是否还能合并
   for (let i = 0; i < state.length; i++) {
     for (let j = 0; j < state[i].length; j++) {
       const currentCell = state[i][j];
-      if (currentCell !== null && j < state[i].length - 1 && currentCell.value === state[i][j + 1].value) { // 先判断 currentCell 是否为 null
-        return false; // 可以向右移动
-      }
-      if (currentCell !== null && i < state.length - 1 && currentCell.value === state[i + 1][j].value) { // 先判断 currentCell 是否为 null
-        return false; // 可以向下移动
+      if (currentCell !== null) {
+        if (j < state[i].length - 1 && currentCell.value === state[i][j + 1]?.value) return false;
+        if (i < state.length - 1 && currentCell.value === state[i + 1][j]?.value) return false;
       }
     }
   }
-
-  return true; // 游戏结束
+  return true;
 }
 
-// 创建一个空的二维数组网格
-function createEmptyGrid(size: number): number[][] {
+function createEmptyGrid(size: number): Cell[][] {
   const cells = [];
-
   for (let x = 0; x < size; x++) {
     const row = cells[x] = [];
-
     for (let y = 0; y < size; y++) {
       row.push(null);
     }
   }
-
   return cells;
 }
 
-// const state = [
-//   [{ position: { x: 0, y: 0 }, value: 2 }, { position: { x: 0, y: 1 }, value: 4 }],
-//   [{ position: { x: 1, y: 0 }, value: 8 }, { position: { x: 1, y: 1 }, value: 16 }]
-// ];
-
-interface Position {
-  x: number;
-  y: number;
-}
-
-interface Cell {
-  position: Position | null;
-  value: number | null;
-}
-
-function getRandomPosition(grid: number[][]): { x: number, y: number } {
+function getRandomPosition(grid: Cell[][]): { x: number, y: number } {
   const availablePositions: { x: number, y: number }[] = [];
   grid.forEach((row, x) => {
     row.forEach((cell, y) => {
       if (cell === null) {
-        availablePositions.push({x, y});
+        availablePositions.push({ x, y });
       }
     });
   });
 
-  if (availablePositions.length === 0) {
-    throw new Error("Grid is full");
-  }
-
+  if (availablePositions.length === 0) throw new Error("Grid is full");
   const randomIndex = Math.floor(Math.random() * availablePositions.length);
   return availablePositions[randomIndex];
 }
 
-function insertRandomElement(grid: number[][], insertNumber: number): Cell[][] {
+function insertRandomElement(grid: Cell[][], insertNumber: number): Cell[][] {
   const newGrid: Cell[][] = grid.map(row => row.map(cell => cell !== null ? {
-    position: {x: 0, y: 0},
-    value: cell
+    position: { x: 0, y: 0 },
+    value: (cell as any).value || cell
   } : null));
 
   for (let i = 0; i < insertNumber; i++) {
-    const {x, y} = getRandomPosition(grid);
+    const { x, y } = getRandomPosition(grid);
     const value = Math.random() < 0.9 ? 2 : 4;
-    newGrid[x][y] = {position: {x, y}, value};
+    newGrid[x][y] = { position: { x, y }, value };
   }
-
   return newGrid;
 }
 
-// 生成 tilesHtml
-function generateTileElement(cell) {
+function generateTileElement(cell: Cell) {
   if (cell !== null) {
-    const {value, position} = cell;
+    const { value, position } = cell;
     const tileClass = `tile tile-${value > 2048 ? 'super' : value} tile-position-${position.y + 1}-${position.x + 1}`;
     const tileInner = `<div class="tile-inner">${value}</div>`;
     return `<div class="${tileClass}">${tileInner}</div>`;
@@ -1579,23 +1169,20 @@ function generateTileElement(cell) {
   return '';
 }
 
-function convertStateToHTML(state) {
+function convertStateToHTML(state: Cell[][]) {
   let html = '';
-  state.forEach((row, rowIndex) => {
-    row.forEach((cell, colIndex) => {
+  state.forEach((row) => {
+    row.forEach((cell) => {
       html += generateTileElement(cell);
     });
   });
   return html;
 }
 
-// 判断 value 中是否有 2048
 function hasValue2048(state: Cell[][]): boolean {
   for (let row of state) {
     for (let cell of row) {
-      if (cell && cell.value === 2048) {
-        return true;
-      }
+      if (cell && cell.value === 2048) return true;
     }
   }
   return false;
@@ -1604,26 +1191,20 @@ function hasValue2048(state: Cell[][]): boolean {
 const htmlHead = `<html lang="zh">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-
     <title>2048 Game</title>
-
     <style>
-
-
         @font-face {
             font-family: "Clear Sans";
             url("./assets/ClearSans-Regular-webfont.woff") format("woff");
             font-weight: normal;
             font-style: normal;
         }
-
         @font-face {
             font-family: "Clear Sans";
             url("./assets/ClearSans-Bold-webfont.woff") format("woff");
             font-weight: 700;
             font-style: normal;
         }
-
         html, body {
             margin: 0;
             padding: 0;
@@ -1632,71 +1213,10 @@ const htmlHead = `<html lang="zh">
             font-family: "Clear Sans", "Helvetica Neue", Arial, sans-serif;
             font-size: 18px;
         }
-
-        body {
-            margin: 20px 0;
-        }
-
-        div.otherGames p {
-            display: inline-block;
-            margin: 20px 30px !important;
-        }
-
-        .heading:after {
-            content: "";
-            display: block;
-            clear: both;
-        }
-
-        .title {
-            font-size: 50px;
-            font-weight: bold;
-            margin: 0;
-            display: block;
-            float: left;
-        }
-
-        /*@-webkit-keyframes move-up {*/
-        /*    0% {*/
-        /*        top: 25px;*/
-        /*        opacity: 1;*/
-        /*    }*/
-
-        /*    100% {*/
-        /*        top: -50px;*/
-        /*        opacity: 0;*/
-        /*    }*/
-        /*}*/
-
-        /*@-moz-keyframes move-up {*/
-        /*    0% {*/
-        /*        top: 25px;*/
-        /*        opacity: 1;*/
-        /*    }*/
-
-        /*    100% {*/
-        /*        top: -50px;*/
-        /*        opacity: 0;*/
-        /*    }*/
-        /*}*/
-
-        /*@keyframes move-up {*/
-        /*    0% {*/
-        /*        top: 25px;*/
-        /*        opacity: 1;*/
-        /*    }*/
-
-        /*    100% {*/
-        /*        top: -50px;*/
-        /*        opacity: 0;*/
-        /*    }*/
-        /*}*/
-
-        .scores-container {
-            float: right;
-            text-align: right;
-        }
-
+        body { margin: 20px 0; }
+        .heading:after { content: ""; display: block; clear: both; }
+        .title { font-size: 50px; font-weight: bold; margin: 0; display: block; float: left; }
+        .scores-container { float: right; text-align: right; }
         .score-container, .best-container {
             position: relative;
             display: inline-block;
@@ -1712,111 +1232,19 @@ const htmlHead = `<html lang="zh">
             margin-top: 8px;
             text-align: center;
         }
-
-        .score-container:after, .best-container:after {
-            position: absolute;
-            width: 100%;
-            top: 10px;
-            left: 0;
-            text-transform: uppercase;
-            font-size: 13px;
-            line-height: 13px;
-            text-align: center;
-            color: #eee4da;
-        }
-
-        .score-container .score-addition, .best-container .score-addition {
-            position: absolute;
-            right: 30px;
-            color: red;
-            font-size: 25px;
-            line-height: 25px;
-            font-weight: bold;
-            color: rgba(119, 110, 101, 0.9);
-            z-index: 100;
-            -webkit-animation: move-up 600ms ease-in;
-            -moz-animation: move-up 600ms ease-in;
-            animation: move-up 600ms ease-in;
-            -webkit-animation-fill-mode: both;
-            -moz-animation-fill-mode: both;
-            animation-fill-mode: both;
-        }
-
-        p {
-            margin-top: 0;
-            margin-bottom: 10px;
-            line-height: 1.65;
-        }
-
-        a {
-            text-decoration: underline;
-            cursor: pointer;
-        }
-
-        strong.important {
-            text-transform: uppercase;
-        }
-
-        hr {
-            border: none;
-            border-bottom: 1px solid #d8d4d0;
-            margin-top: 20px;
-            margin-bottom: 30px;
-        }
-
-        /*@-webkit-keyframes fade-in {*/
-        /*    0% {*/
-        /*        opacity: 0;*/
-        /*    }*/
-
-        /*    100% {*/
-        /*        opacity: 1;*/
-        /*    }*/
-        /*}*/
-
-        /*@-moz-keyframes fade-in {*/
-        /*    0% {*/
-        /*        opacity: 0;*/
-        /*    }*/
-
-        /*    100% {*/
-        /*        opacity: 1;*/
-        /*    }*/
-        /*}*/
-
-        /*@keyframes fade-in {*/
-        /*    0% {*/
-        /*        opacity: 0;*/
-        /*    }*/
-
-        /*    100% {*/
-        /*        opacity: 1;*/
-        /*    }*/
-        /*}*/
-
+        .score-container:after { content: "Score"; position: absolute; width: 100%; top: 10px; left: 0; text-transform: uppercase; font-size: 13px; line-height: 13px; text-align: center; color: #eee4da; }
+        .best-container:after { content: "Best"; position: absolute; width: 100%; top: 10px; left: 0; text-transform: uppercase; font-size: 13px; line-height: 13px; text-align: center; color: #eee4da; }
+        p { margin-top: 0; margin-bottom: 10px; line-height: 1.65; }
+        a { text-decoration: underline; cursor: pointer; }
         .game-container .game-message {
             display: none;
             position: absolute;
-            top: 0;
-            right: 0;
-            bottom: 0;
-            left: 0;
+            top: 0; right: 0; bottom: 0; left: 0;
             background: rgba(238, 228, 218, 0.5);
             z-index: 100;
             text-align: center;
-            -webkit-animation: fade-in 800ms ease 1200ms;
-            -moz-animation: fade-in 800ms ease 1200ms;
-            animation: fade-in 800ms ease 1200ms;
-            -webkit-animation-fill-mode: both;
-            -moz-animation-fill-mode: both;
-            animation-fill-mode: both;
         }
-
-        .game-container .game-message .lower {
-            display: block;
-            margin-top: 59px;
-        }
-
+        .game-container .game-message .lower { display: block; margin-top: 59px; }
         .game-container .game-message a {
             display: inline-block;
             background: #8f7a66;
@@ -1828,869 +1256,34 @@ const htmlHead = `<html lang="zh">
             line-height: 42px;
             margin-left: 9px;
         }
-
-        .game-container .game-message a.keep-playing-button {
-            display: none;
-        }
-
-        .game-container .game-message.game-won {
-            background: rgba(237, 194, 46, 0.5);
-            color: #f9f6f2;
-        }
-
-        .game-container .game-message.game-won a.keep-playing-button {
-            display: inline-block;
-        }
-
-        .game-container .game-message.game-won, .game-container .game-message.game-over {
-            display: block;
-        }
-
-        .grid-container {
-            position: absolute;
-            z-index: 1;
-        }
-
-        .grid-row {
-            margin-bottom: 15px;
-        }
-
-        .grid-row:last-child {
-            margin-bottom: 0;
-        }
-
-        .grid-row:after {
-            content: "";
-            display: block;
-            clear: both;
-        }
-
+        .game-container .game-message a.keep-playing-button { display: none; }
+        .game-container .game-message.game-won { background: rgba(237, 194, 46, 0.5); color: #f9f6f2; }
+        .game-container .game-message.game-won a.keep-playing-button { display: inline-block; }
+        .game-container .game-message.game-won, .game-container .game-message.game-over { display: block; }
+        .grid-container { position: absolute; z-index: 1; }
+        .grid-row { margin-bottom: 15px; }
+        .grid-row:last-child { margin-bottom: 0; }
+        .grid-row:after { content: ""; display: block; clear: both; }
         .grid-cell {
-            width: 106.25px;
-            height: 106.25px;
-            margin-right: 15px;
-            float: left;
-            border-radius: 3px;
-            background: rgba(238, 228, 218, 0.35);
+            width: 106.25px; height: 106.25px; margin-right: 15px; float: left; border-radius: 3px; background: rgba(238, 228, 218, 0.35);
         }
-
-        .grid-cell:last-child {
-            margin-right: 0;
-        }
-
-        .tile-container {
-            position: absolute;
-            z-index: 2;
-        }
-
-        .tile, .tile .tile-inner {
-            width: 107px;
-            height: 107px;
-            line-height: 107px;
-        }
-
-        .tile {
-            position: absolute;
-            -webkit-transition: 100ms ease-in-out;
-            -moz-transition: 100ms ease-in-out;
-            transition: 100ms ease-in-out;
-            -webkit-transition-property: -webkit-transform;
-            -moz-transition-property: -moz-transform;
-            transition-property: transform;
-        }
-
+        .grid-cell:last-child { margin-right: 0; }
+        .tile-container { position: absolute; z-index: 2; }
+        .tile, .tile .tile-inner { width: 107px; height: 107px; line-height: 107px; }
+        .tile { position: absolute; transition: 100ms ease-in-out; }
         .tile .tile-inner {
-            border-radius: 3px;
-            background: #eee4da;
-            text-align: center;
-            font-weight: bold;
-            z-index: 10;
-            font-size: 55px;
+            border-radius: 3px; background: #eee4da; text-align: center; font-weight: bold; z-index: 10; font-size: 55px;
         }
-
-        .tile.tile-2 .tile-inner {
-            background: #eee4da;
-            box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0), inset 0 0 0 1px rgba(255, 255, 255, 0);
-        }
-
-        .tile.tile-4 .tile-inner {
-            background: #ede0c8;
-            box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0), inset 0 0 0 1px rgba(255, 255, 255, 0);
-        }
-
-        .tile.tile-8 .tile-inner {
-            color: #f9f6f2;
-            background: #f2b179;
-        }
-
-        .tile.tile-16 .tile-inner {
-            color: #f9f6f2;
-            background: #f59563;
-        }
-
-        .tile.tile-32 .tile-inner {
-            color: #f9f6f2;
-            background: #f67c5f;
-        }
-
-        .tile.tile-64 .tile-inner {
-            color: #f9f6f2;
-            background: #f65e3b;
-        }
-
-        .tile.tile-128 .tile-inner {
-            color: #f9f6f2;
-            background: #edcf72;
-            box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.2381), inset 0 0 0 1px rgba(255, 255, 255, 0.14286);
-            font-size: 45px;
-        }
-
-        @media screen and (max-width: 520px) {
-            .tile.tile-128 .tile-inner {
-                font-size: 25px;
-            }
-        }
-
-        .tile.tile-256 .tile-inner {
-            color: #f9f6f2;
-            background: #edcc61;
-            box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.31746), inset 0 0 0 1px rgba(255, 255, 255, 0.19048);
-            font-size: 45px;
-        }
-
-        @media screen and (max-width: 520px) {
-            .tile.tile-256 .tile-inner {
-                font-size: 25px;
-            }
-        }
-
-        .tile.tile-512 .tile-inner {
-            color: #f9f6f2;
-            background: #edc850;
-            box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.39683), inset 0 0 0 1px rgba(255, 255, 255, 0.2381);
-            font-size: 45px;
-        }
-
-        @media screen and (max-width: 520px) {
-            .tile.tile-512 .tile-inner {
-                font-size: 25px;
-            }
-        }
-
-        .tile.tile-1024 .tile-inner {
-            color: #f9f6f2;
-            background: #edc53f;
-            box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.47619), inset 0 0 0 1px rgba(255, 255, 255, 0.28571);
-            font-size: 35px;
-        }
-
-        @media screen and (max-width: 520px) {
-            .tile.tile-1024 .tile-inner {
-                font-size: 15px;
-            }
-        }
-
-        .tile.tile-2048 .tile-inner {
-            color: #f9f6f2;
-            background: #edc22e;
-            box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.55556), inset 0 0 0 1px rgba(255, 255, 255, 0.33333);
-            font-size: 35px;
-        }
-
-        @media screen and (max-width: 520px) {
-            .tile.tile-2048 .tile-inner {
-                font-size: 15px;
-            }
-        }
-
-        .tile.tile-super .tile-inner {
-            color: #f9f6f2;
-            background: #3c3a32;
-            font-size: 30px;
-        }
-
-        @media screen and (max-width: 520px) {
-            .tile.tile-super .tile-inner {
-                font-size: 10px;
-            }
-        }
-
-        /*@-webkit-keyframes appear {*/
-        /*    0% {*/
-        /*        opacity: 0;*/
-        /*        -webkit-transform: scale(0);*/
-        /*        -moz-transform: scale(0);*/
-        /*        transform: scale(0);*/
-        /*    }*/
-
-        /*    100% {*/
-        /*        opacity: 1;*/
-        /*        -webkit-transform: scale(1);*/
-        /*        -moz-transform: scale(1);*/
-        /*        transform: scale(1);*/
-        /*    }*/
-        /*}*/
-
-        /*@-moz-keyframes appear {*/
-        /*    0% {*/
-        /*        opacity: 0;*/
-        /*        -webkit-transform: scale(0);*/
-        /*        -moz-transform: scale(0);*/
-        /*        transform: scale(0);*/
-        /*    }*/
-
-        /*    100% {*/
-        /*        opacity: 1;*/
-        /*        -webkit-transform: scale(1);*/
-        /*        -moz-transform: scale(1);*/
-        /*        transform: scale(1);*/
-        /*    }*/
-        /*}*/
-
-        /*@keyframes appear {*/
-        /*    0% {*/
-        /*        opacity: 0;*/
-        /*        -webkit-transform: scale(0);*/
-        /*        -moz-transform: scale(0);*/
-        /*        transform: scale(0);*/
-        /*    }*/
-
-        /*    100% {*/
-        /*        opacity: 1;*/
-        /*        -webkit-transform: scale(1);*/
-        /*        -moz-transform: scale(1);*/
-        /*        transform: scale(1);*/
-        /*    }*/
-        /*}*/
-
-        /*.tile-new .tile-inner {*/
-        /*    -webkit-animation: appear 200ms ease 100ms;*/
-        /*    -moz-animation: appear 200ms ease 100ms;*/
-        /*    animation: appear 200ms ease 100ms;*/
-        /*    -webkit-animation-fill-mode: backwards;*/
-        /*    -moz-animation-fill-mode: backwards;*/
-        /*    animation-fill-mode: backwards;*/
-        /*}*/
-
-        /*@-webkit-keyframes pop {*/
-        /*    0% {*/
-        /*        -webkit-transform: scale(0);*/
-        /*        -moz-transform: scale(0);*/
-        /*        transform: scale(0);*/
-        /*    }*/
-
-        /*    50% {*/
-        /*        -webkit-transform: scale(1.2);*/
-        /*        -moz-transform: scale(1.2);*/
-        /*        transform: scale(1.2);*/
-        /*    }*/
-
-        /*    100% {*/
-        /*        -webkit-transform: scale(1);*/
-        /*        -moz-transform: scale(1);*/
-        /*        transform: scale(1);*/
-        /*    }*/
-        /*}*/
-
-        /*@-moz-keyframes pop {*/
-        /*    0% {*/
-        /*        -webkit-transform: scale(0);*/
-        /*        -moz-transform: scale(0);*/
-        /*        transform: scale(0);*/
-        /*    }*/
-
-        /*    50% {*/
-        /*        -webkit-transform: scale(1.2);*/
-        /*        -moz-transform: scale(1.2);*/
-        /*        transform: scale(1.2);*/
-        /*    }*/
-
-        /*    100% {*/
-        /*        -webkit-transform: scale(1);*/
-        /*        -moz-transform: scale(1);*/
-        /*        transform: scale(1);*/
-        /*    }*/
-        /*}*/
-
-        /*@keyframes pop {*/
-        /*    0% {*/
-        /*        -webkit-transform: scale(0);*/
-        /*        -moz-transform: scale(0);*/
-        /*        transform: scale(0);*/
-        /*    }*/
-
-        /*    50% {*/
-        /*        -webkit-transform: scale(1.2);*/
-        /*        -moz-transform: scale(1.2);*/
-        /*        transform: scale(1.2);*/
-        /*    }*/
-
-        /*    100% {*/
-        /*        -webkit-transform: scale(1);*/
-        /*        -moz-transform: scale(1);*/
-        /*        transform: scale(1);*/
-        /*    }*/
-        /*}*/
-
-        /*.tile-merged .tile-inner {*/
-        /*    z-index: 20;*/
-        /*    -webkit-animation: pop 200ms ease 100ms;*/
-        /*    -moz-animation: pop 200ms ease 100ms;*/
-        /*    animation: pop 200ms ease 100ms;*/
-        /*    -webkit-animation-fill-mode: backwards;*/
-        /*    -moz-animation-fill-mode: backwards;*/
-        /*    animation-fill-mode: backwards;*/
-        /*}*/
-
-        .above-game:after {
-            content: "";
-            display: block;
-            clear: both;
-        }
-
-        .game-intro {
-            float: left;
-            line-height: 42px;
-            margin-bottom: 0;
-        }
-
-        .restart-button {
-            background: #8f7a66;
-            border-radius: 3px;
-            padding: 0 20px;
-            text-decoration: none;
-            color: #f9f6f2;
-            height: 40px;
-            line-height: 42px;
-            display: block;
-            text-align: center;
-            float: right;
-        }
-
-        .game-explanation {
-            margin-top: 30px;
-        }
-
-        @media screen and (max-width: 520px) {
-            html, body {
-                font-size: 15px;
-            }
-
-            body {
-                margin: 20px 0;
-                padding: 0 20px;
-            }
-
-            h1.title {
-                font-size: 24px;
-                margin-top: 15px;
-            }
-
-            .container {
-                width: 280px;
-                margin: 0 auto;
-            }
-
-            .score-container, .best-container {
-                margin-top: 0;
-                padding: 15px 10px;
-                min-width: 40px;
-            }
-
-            .heading {
-                margin-bottom: 10px;
-            }
-
-            .game-intro {
-                width: 55%;
-                display: block;
-                box-sizing: border-box;
-                line-height: 1.65;
-            }
-
-            .restart-button {
-                width: 42%;
-                padding: 0;
-                display: block;
-                box-sizing: border-box;
-                margin-top: 2px;
-            }
-
-            .game-container {
-                margin-top: 17px;
-                position: relative;
-                padding: 10px;
-                cursor: default;
-                -webkit-touch-callout: none;
-                -ms-touch-callout: none;
-                -webkit-user-select: none;
-                -moz-user-select: none;
-                -ms-user-select: none;
-                -ms-touch-action: none;
-                user-select: none;
-                touch-action: none;
-                background: #bbada0;
-                border-radius: 6px;
-                width: 280px;
-                height: 280px;
-                -webkit-box-sizing: border-box;
-                -moz-box-sizing: border-box;
-                box-sizing: border-box;
-            }
-
-            .game-container .game-message {
-                display: none;
-                position: absolute;
-                top: 0;
-                right: 0;
-                bottom: 0;
-                left: 0;
-                background: rgba(238, 228, 218, 0.5);
-                z-index: 100;
-                text-align: center;
-                -webkit-animation: fade-in 800ms ease 1200ms;
-                -moz-animation: fade-in 800ms ease 1200ms;
-                animation: fade-in 800ms ease 1200ms;
-                -webkit-animation-fill-mode: both;
-                -moz-animation-fill-mode: both;
-                animation-fill-mode: both;
-            }
-
-            .game-container .game-message p {
-                font-size: 60px;
-                font-weight: bold;
-                height: 60px;
-                line-height: 60px;
-                margin-top: 222px;
-            }
-
-            .game-container .game-message .lower {
-                display: block;
-                margin-top: 59px;
-            }
-
-            .game-container .game-message a {
-                display: inline-block;
-                background: #8f7a66;
-                border-radius: 3px;
-                padding: 0 20px;
-                text-decoration: none;
-                color: #f9f6f2;
-                height: 40px;
-                line-height: 42px;
-                margin-left: 9px;
-            }
-
-            .game-container .game-message a.keep-playing-button {
-                display: none;
-            }
-
-            .game-container .game-message.game-won {
-                background: rgba(237, 194, 46, 0.5);
-                color: #f9f6f2;
-            }
-
-            .game-container .game-message.game-won a.keep-playing-button {
-                display: inline-block;
-            }
-
-            .game-container .game-message.game-won, .game-container .game-message.game-over {
-                display: block;
-            }
-
-            .grid-container {
-                position: absolute;
-                z-index: 1;
-            }
-
-            .grid-row {
-                margin-bottom: 10px;
-            }
-
-            .grid-row:last-child {
-                margin-bottom: 0;
-            }
-
-            .grid-row:after {
-                content: "";
-                display: block;
-                clear: both;
-            }
-
-            .grid-cell {
-                width: 57.5px;
-                height: 57.5px;
-                margin-right: 10px;
-                float: left;
-                border-radius: 3px;
-                background: rgba(238, 228, 218, 0.35);
-            }
-
-            .grid-cell:last-child {
-                margin-right: 0;
-            }
-
-            .tile-container {
-                position: absolute;
-                z-index: 2;
-            }
-
-            .tile, .tile .tile-inner {
-                width: 58px;
-                height: 58px;
-                line-height: 58px;
-            }
-
-            .tile.tile-position-1-1 {
-                -webkit-transform: translate(0px, 0px);
-                -moz-transform: translate(0px, 0px);
-                transform: translate(0px, 0px);
-            }
-
-            .tile.tile-position-1-2 {
-                -webkit-transform: translate(0px, 67px);
-                -moz-transform: translate(0px, 67px);
-                transform: translate(0px, 67px);
-            }
-
-            .tile.tile-position-1-3 {
-                -webkit-transform: translate(0px, 135px);
-                -moz-transform: translate(0px, 135px);
-                transform: translate(0px, 135px);
-            }
-
-            .tile.tile-position-1-4 {
-                -webkit-transform: translate(0px, 202px);
-                -moz-transform: translate(0px, 202px);
-                transform: translate(0px, 202px);
-            }
-
-            .tile.tile-position-2-1 {
-                -webkit-transform: translate(67px, 0px);
-                -moz-transform: translate(67px, 0px);
-                transform: translate(67px, 0px);
-            }
-
-            .tile.tile-position-2-2 {
-                -webkit-transform: translate(67px, 67px);
-                -moz-transform: translate(67px, 67px);
-                transform: translate(67px, 67px);
-            }
-
-            .tile.tile-position-2-3 {
-                -webkit-transform: translate(67px, 135px);
-                -moz-transform: translate(67px, 135px);
-                transform: translate(67px, 135px);
-            }
-
-            .tile.tile-position-2-4 {
-                -webkit-transform: translate(67px, 202px);
-                -moz-transform: translate(67px, 202px);
-                transform: translate(67px, 202px);
-            }
-
-            .tile.tile-position-3-1 {
-                -webkit-transform: translate(135px, 0px);
-                -moz-transform: translate(135px, 0px);
-                transform: translate(135px, 0px);
-            }
-
-            .tile.tile-position-3-2 {
-                -webkit-transform: translate(135px, 67px);
-                -moz-transform: translate(135px, 67px);
-                transform: translate(135px, 67px);
-            }
-
-            .tile.tile-position-3-3 {
-                -webkit-transform: translate(135px, 135px);
-                -moz-transform: translate(135px, 135px);
-                transform: translate(135px, 135px);
-            }
-
-            .tile.tile-position-3-4 {
-                -webkit-transform: translate(135px, 202px);
-                -moz-transform: translate(135px, 202px);
-                transform: translate(135px, 202px);
-            }
-
-            .tile.tile-position-4-1 {
-                -webkit-transform: translate(202px, 0px);
-                -moz-transform: translate(202px, 0px);
-                transform: translate(202px, 0px);
-            }
-
-            .tile.tile-position-4-2 {
-                -webkit-transform: translate(202px, 67px);
-                -moz-transform: translate(202px, 67px);
-                transform: translate(202px, 67px);
-            }
-
-            .tile.tile-position-4-3 {
-                -webkit-transform: translate(202px, 135px);
-                -moz-transform: translate(202px, 135px);
-                transform: translate(202px, 135px);
-            }
-
-            .tile.tile-position-4-4 {
-                -webkit-transform: translate(202px, 202px);
-                -moz-transform: translate(202px, 202px);
-                transform: translate(202px, 202px);
-            }
-
-            .tile .tile-inner {
-                font-size: 35px;
-            }
-
-            .game-message p {
-                font-size: 30px !important;
-                height: 30px !important;
-                line-height: 30px !important;
-                margin-top: 90px !important;
-            }
-
-            .game-message .lower {
-                margin-top: 30px !important;
-            }
-        }
-
-    </style>
-    <style>
-        .score-container:after {
-            content: "Score";
-        }
-
-        .best-container:after {
-            content: "Best";
-        }
-    </style>
-
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
-    <style data-id="immersive-translate-input-injected-css">
-    .immersive-translate-input {
-        position: absolute;
-        top: 0;
-        right: 0;
-        left: 0;
-        bottom: 0;
-        z-index: 2147483647;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-    }
-
-    .immersive-translate-loading-spinner {
-        vertical-align: middle !important;
-        width: 10px !important;
-        height: 10px !important;
-        display: inline-block !important;
-        margin: 0 4px !important;
-        border: 2px rgba(221, 244, 255, 0.6) solid !important;
-        border-top: 2px rgba(0, 0, 0, 0.375) solid !important;
-        border-left: 2px rgba(0, 0, 0, 0.375) solid !important;
-        border-radius: 50% !important;
-        padding: 0 !important;
-        -webkit-animation: immersive-translate-loading-animation 0.6s infinite linear !important;
-        animation: immersive-translate-loading-animation 0.6s infinite linear !important;
-    }
-
-    .immersive-translate-input-loading {
-        --loading-color: #f78fb6;
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        display: block;
-        margin: 12px auto;
-        position: relative;
-        color: white;
-        left: -100px;
-        box-sizing: border-box;
-        animation: immersiveTranslateShadowRolling 1.5s linear infinite;
-    }
-
-
-    .immersive-translate-search-recomend {
-        border: 1px solid #dadce0;
-        border-radius: 8px;
-        padding: 16px;
-        margin-bottom: 16px;
-        position: relative;
-        font-size: 16px;
-    }
-
-    .immersive-translate-search-enhancement-en-title {
-        color: #4d5156;
-    }
-
-    /* dark */
-    @media (prefers-color-scheme: dark) {
-        .immersive-translate-search-recomend {
-            border: 1px solid #3c4043;
-        }
-
-        .immersive-translate-close-action svg {
-            fill: #bdc1c6;
-        }
-
-        .immersive-translate-search-enhancement-en-title {
-            color: #bdc1c6;
-        }
-    }
-
-
-    .immersive-translate-search-settings {
-        position: absolute;
-        top: 16px;
-        right: 16px;
-        cursor: pointer;
-    }
-
-    .immersive-translate-search-title {
-    }
-
-    .immersive-translate-search-title-wrapper {
-    }
-
-    .immersive-translate-search-time {
-        font-size: 12px;
-        margin: 4px 0 24px;
-        color: #70757a;
-    }
-
-    .immersive-translate-expand-items {
-        display: none;
-    }
-
-    .immersive-translate-search-more {
-        margin-top: 16px;
-        font-size: 14px;
-    }
-
-    .immersive-translate-modal {
-        display: none;
-        position: fixed;
-        z-index: 2147483647;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        overflow: auto;
-        background-color: rgb(0, 0, 0);
-        background-color: rgba(0, 0, 0, 0.4);
-        font-size: 15px;
-    }
-
-    .immersive-translate-modal-content {
-        background-color: #fefefe;
-        margin: 15% auto;
-        padding: 20px;
-        border: 1px solid #888;
-        border-radius: 10px;
-        width: 80%;
-        max-width: 500px;
-        font-family: system-ui, -apple-system, "Segoe UI", "Roboto", "Ubuntu",
-        "Cantarell", "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
-        "Segoe UI Symbol", "Noto Color Emoji";
-    }
-
-    .immersive-translate-modal-title {
-        font-size: 1.3rem;
-        font-weight: 500;
-        margin-bottom: 20px;
-        color: hsl(205, 20%, 32%);
-    }
-
-    .immersive-translate-modal-body {
-        color: hsl(205, 20%, 32%);
-        word-break: break-all;
-    }
-
-    .immersive-translate-close {
-        color: #aaa;
-        float: right;
-        font-size: 28px;
-        font-weight: bold;
-    }
-
-    .immersive-translate-close:hover,
-    .immersive-translate-close:focus {
-        color: black;
-        text-decoration: none;
-        cursor: pointer;
-    }
-
-    .immersive-translate-modal-footer {
-        display: flex;
-        justify-content: flex-end;
-        flex-wrap: wrap;
-        margin-top: 20px;
-    }
-
-    .immersive-translate-btn {
-        width: fit-content;
-        color: #fff;
-        background-color: #ea4c89;
-        border: none;
-        font-size: 14px;
-        margin: 5px;
-        padding: 10px 20px;
-        font-size: 1rem;
-        border-radius: 5px;
-        display: flex;
-        align-items: center;
-        cursor: pointer;
-        transition: background-color 0.3s ease;
-    }
-
-    .immersive-translate-btn:hover {
-        background-color: #f082ac;
-    }
-
-    .immersive-translate-cancel-btn {
-        /* gray color */
-        background-color: rgb(89, 107, 120);
-    }
-
-
-    .immersive-translate-cancel-btn:hover {
-        background-color: hsl(205, 20%, 32%);
-    }
-
-
-    .immersive-translate-btn svg {
-        margin-right: 5px;
-    }
-
-    .immersive-translate-link {
-        cursor: pointer;
-        user-select: none;
-        -webkit-user-drag: none;
-        text-decoration: none;
-        color: #007bff;
-        -webkit-tap-highlight-color: rgba(0, 0, 0, .1);
-    }
-
-    .immersive-translate-primary-link {
-        cursor: pointer;
-        user-select: none;
-        -webkit-user-drag: none;
-        text-decoration: none;
-        color: #ea4c89;
-        -webkit-tap-highlight-color: rgba(0, 0, 0, .1);
-    }
-
-    .immersive-translate-modal input[type="radio"] {
-        margin: 0 6px;
-        cursor: pointer;
-    }
-
-    .immersive-translate-modal label {
-        cursor: pointer;
-    }
-
-    .immersive-translate-close-action {
-        position: absolute;
-        top: 2px;
-        right: 0px;
-        cursor: pointer;
-    }
+        .tile.tile-2 .tile-inner { background: #eee4da; }
+        .tile.tile-4 .tile-inner { background: #ede0c8; }
+        .tile.tile-8 .tile-inner { color: #f9f6f2; background: #f2b179; }
+        .tile.tile-16 .tile-inner { color: #f9f6f2; background: #f59563; }
+        .tile.tile-32 .tile-inner { color: #f9f6f2; background: #f67c5f; }
+        .tile.tile-64 .tile-inner { color: #f9f6f2; background: #f65e3b; }
+        .tile.tile-128 .tile-inner { color: #f9f6f2; background: #edcf72; font-size: 45px; }
+        .tile.tile-256 .tile-inner { color: #f9f6f2; background: #edcc61; font-size: 45px; }
+        .tile.tile-512 .tile-inner { color: #f9f6f2; background: #edc850; font-size: 45px; }
+        .tile.tile-1024 .tile-inner { color: #f9f6f2; background: #edc53f; font-size: 35px; }
+        .tile.tile-2048 .tile-inner { color: #f9f6f2; background: #edc22e; font-size: 35px; }
+        .tile.tile-super .tile-inner { color: #f9f6f2; background: #3c3a32; font-size: 30px; }
 `
