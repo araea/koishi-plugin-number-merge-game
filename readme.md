@@ -20,8 +20,8 @@ Koishi 的 2048 游戏插件。
 ## 致谢
 
 - [Koishi](https://koishi.chat/) - 机器人框架
-- https://www.2048.org/ - 游戏资源
-- https://forum.koishi.xyz/t/topic/6595 - 插件动力来源
+- [2048.org](https://www.2048.org/) - 游戏资源
+- [Koishi 论坛](https://forum.koishi.xyz/t/topic/6595) - 插件动力来源
 
 ## QQ 群
 
