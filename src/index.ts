@@ -162,18 +162,18 @@ export function apply(ctx: Context, config: Config) {
       const [player] = await ctx.database.get('players_in_2048_playing', { channelId, userId })
 
       if (game.gameStatus !== '未开始') {
-        if (!player) return sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n下次记得早点加入游戏呀！`)
-        return sendMessage(session, [`【@${username}】\n你已经在游戏里啦，继续玩吧~\n`, image(await board(game))])
+        if (!player) return sendMessage(session, '⚠️ 游戏已经开始，无法中途加入。')
+        return sendMessage(session, ['⚠️ 你已经在游戏中。\n', image(await board(game))])
       }
 
       if (money > config.maxInvestmentCurrency) {
-        return sendMessage(session, `【@${username}】\n投入金额太多惹...\n最大投入金额为：【${config.maxInvestmentCurrency}】`)
+        return sendMessage(session, `⚠️ 投入金额超过上限 ${config.maxInvestmentCurrency}。`)
       }
 
       const uid = await uidOf(session)
       // 改投入时先把上一笔退回来，再按新的金额扣
       if (player) {
-        if (!money) return sendMessage(session, `【@${username}】\n您已经在游戏中了！\n修改金额的话...\n您得先告诉我想投多少呀~`)
+        if (!money) return sendMessage(session, '⚠️ 你已经在游戏中。若要修改投入，请带上新的金额再加入一次。')
         await ctx.monetary.gain(uid, player.money)
       }
 
@@ -181,7 +181,7 @@ export function apply(ctx: Context, config: Config) {
       const balance = wallet?.value ?? 0
       if (balance < money) {
         if (player) await ctx.monetary.cost(uid, player.money)
-        return sendMessage(session, `【@${username}】\n笨蛋！\n赚钱的前提是有本金呐~\n您的余额为：【${balance}】`)
+        return sendMessage(session, `⚠️ 余额不足（当前 ${balance}）。`)
       }
 
       await ctx.monetary.cost(uid, money)
@@ -190,12 +190,12 @@ export function apply(ctx: Context, config: Config) {
 
       const count = (await ctx.database.get('players_in_2048_playing', { channelId })).length
       if (player) {
-        return sendMessage(session, `【@${username}】\n金额修改成功了呢！\n当前您投入的金额为：【${money}】\n当前玩家人数：${count} 名！`)
+        return sendMessage(session, `✅ 投入已改为 ${money}。当前玩家：${count} 人。`)
       }
       const tail = money
-        ? `\n投入金额：【${money}】\n当前倍率为：【${config.rewardMultiplier2048Win}】！\n想要修改金额的话...\n那就再加入一次咯~`
-        : `\n这个小游戏可以赚钱哦~\n当前倍率为：【${config.rewardMultiplier2048Win}】倍！\n想要投入金额的话...\n那就带上投入的金额数字！`
-      return sendMessage(session, `【@${username}】\n您成功加入游戏了!${tail}\n当前玩家人数：${count} 名！`)
+        ? `\n投入：${money}，倍率：${config.rewardMultiplier2048Win}。再次加入可修改投入。`
+        : `\n当前倍率：${config.rewardMultiplier2048Win}。加入时带上金额即可投入。`
+      return sendMessage(session, `✅ 加入成功。${tail}\n当前玩家：${count} 人。`)
     })
 
   cmd.subcommand('.退出', '退出游戏')
@@ -204,17 +204,17 @@ export function apply(ctx: Context, config: Config) {
       const { userId, username } = session
       const game = await getGame(channelId)
       if (game.gameStatus !== '未开始') {
-        return sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n不许逃跑！要认真对待呐~`)
+        return sendMessage(session, '⚠️ 游戏已经开始，无法退出。')
       }
       const [player] = await ctx.database.get('players_in_2048_playing', { channelId, userId })
-      if (!player) return sendMessage(session, `【@${username}】\n诶呀，你都没加入游戏！那你可退出不了~`)
+      if (!player) return sendMessage(session, '⚠️ 你还没有加入游戏。')
 
       const uid = await uidOf(session)
       await ctx.monetary.gain(uid, player.money)
       await ctx.database.remove('players_in_2048_playing', { channelId, userId })
       const [wallet] = await ctx.database.get('monetary', { uid, currency: 'default' })
       const count = (await ctx.database.get('players_in_2048_playing', { channelId })).length
-      return sendMessage(session, `【@${username}】\n您要走了嘛...\n那就下次再来玩吧~再见！\n钱已经还给你啦！\n您当前的余额为：【${wallet?.value ?? 0}】\n剩余玩家人数：${count} 名！`)
+      return sendMessage(session, `✅ 已退出，投入已退还。当前余额：${wallet?.value ?? 0}。剩余玩家：${count} 人。`)
     })
 
   cmd.subcommand('.开始 [gridSize:natural]', '开始游戏')
@@ -222,16 +222,16 @@ export function apply(ctx: Context, config: Config) {
       const channelId = channelOf(session)
       const { username } = session
       if (gridSize < 4 || gridSize > 8) {
-        return sendMessage(session, `【@${username}】\n请输入有效的数字，范围应在 4 到 8 之间。`)
+        return sendMessage(session, '⚠️ 网格大小须在 4 到 8 之间。')
       }
 
       const game = await getGame(channelId)
       if (game.gameStatus !== '未开始') {
-        return sendMessage(session, `【@${username}】\n游戏已经开始了哦~\n难道你想开始两次？`)
+        return sendMessage(session, '⚠️ 游戏已经开始了。')
       }
       const players = await ctx.database.get('players_in_2048_playing', { channelId })
       if (!players.length && !config.allowNonPlayersToMove2048Tiles) {
-        return sendMessage(session, `【@${username}】\n笨蛋，还没有玩家加入游戏呢！才不给你开始~略略略~`)
+        return sendMessage(session, '⚠️ 还没有玩家加入，无法开始。')
       }
 
       // 娱乐模式不记分也不发奖，投入原样退回（只退本频道的，别动别人的局）
@@ -246,11 +246,11 @@ export function apply(ctx: Context, config: Config) {
       })
 
       const buffer = await board({ ...game, progress, gridSize, score: 0 })
-      const mode = gridSize === 4 ? '该局游戏是经典模式会记分哦~' : '该局游戏是娱乐模式不记分哦~\n投入的钱已经还给你们惹！'
+      const mode = gridSize === 4 ? '本局为经典模式，会计分发奖。' : '本局为娱乐模式，不记分。投入已退还。'
       return sendMessage(session, [
-        `游戏开始咯！\n${mode}\n您现在可以输入指令进行移动啦~\n`,
+        `✅ 游戏开始。\n${mode}\n发送方向即可移动：`,
         image(buffer),
-        '\n可选指令参数有：\n【上/s/u】\n【下/x/d】\n【左/z/l】\n【右/y/r】\n可以一次性输入多个参数哦~',
+        '\n上 / s / u\n下 / x / d\n左 / z / l\n右 / y / r\n方向可连写，如「左左上」。',
       ])
     })
 
@@ -259,10 +259,10 @@ export function apply(ctx: Context, config: Config) {
       const channelId = channelOf(session)
       const game = await getGame(channelId)
       if (game.gameStatus === '未开始') {
-        return sendMessage(session, `【@${session.username}】\n游戏还没开始呢...\n好像不用重置吧~`)
+        return sendMessage(session, '⚠️ 游戏还没开始，无需重置。')
       }
       await resetGame(channelId)
-      return sendMessage(session, `【@${session.username}】\n既然你想要重置游戏的话...\n那就重来咯~不过呢...\n投的钱都归我咯~！`)
+      return sendMessage(session, '✅ 本局已重置。投入不会退还。')
     })
 
   cmd.subcommand('.移动 [operation:text]', '进行移动操作')
@@ -273,30 +273,30 @@ export function apply(ctx: Context, config: Config) {
       const { userId, username } = session
 
       const game = await getGame(channelId)
-      if (game.gameStatus === '未开始') return sendMessage(session, `【@${username}】\n游戏还没开始呢~`)
+      if (game.gameStatus === '未开始') return sendMessage(session, '⚠️ 游戏还没开始。')
       if (game.isWon && !game.isKeepPlaying) {
-        return sendMessage(session, `【@${username}】\n你们已经赢了哦！\n等待最后操作者做出选择吧~`)
+        return sendMessage(session, '⏳ 已经达成 2048，等待最后操作者选择是否继续。')
       }
 
       const [player] = await ctx.database.get('players_in_2048_playing', { channelId, userId })
       if (!player) {
         if (!config.allowNonPlayersToMove2048Tiles) {
-          return sendMessage(session, `【@${username}】\n没加入游戏的话~移动不了哦！`)
+          return sendMessage(session, '⚠️ 你还没有加入游戏，无法移动。')
         }
         await getRecord(userId, username)
         await ctx.database.create('players_in_2048_playing', { channelId, userId, username, money: 0 })
       }
 
       if (!operation) {
-        await sendMessage(session, `【@${username}】\n请输入你想要进行的【移动操作】：\n可以一次输入多个操作~\n例如：左右上下左左右`)
+        await sendMessage(session, '⚠️ 请输入移动方向。可连写，例如：左右上下。')
         operation = await session.prompt()
-        if (!operation) return sendMessage(session, '输入超时。')
+        if (!operation) return sendMessage(session, '⚠️ 输入超时。')
       }
 
       const steps = [...operation].map((char) => DIRECTIONS[char.toLowerCase()]).filter(Boolean)
-      if (!steps.length) return sendMessage(session, `【@${username}】\n没看懂这是往哪儿走呀~\n可用：上/s/u 下/x/d 左/z/l 右/y/r`)
+      if (!steps.length) return sendMessage(session, '⚠️ 无法识别方向。可用：上/s/u 下/x/d 左/z/l 右/y/r')
 
-      if (moving.has(channelId)) return sendMessage(session, `【@${username}】\n上一步还在算呢，稍等一下下~`)
+      if (moving.has(channelId)) return sendMessage(session, '⏳ 上一步还在计算，请稍候。')
       moving.add(channelId)
       try {
         // 整串走完只写一次库：原来每合并一次就要读写一遍 game_2048_records
@@ -351,8 +351,8 @@ export function apply(ctx: Context, config: Config) {
           const settlement = game.isKeepPlaying ? await settleKeepPlaying(session, channelId, players, top) : ''
           await resetGame(channelId)
           return sendMessage(session, game.isKeepPlaying
-            ? [`游戏结束了哦！`, image(buffer), `\n继续游戏后的结算结果如下：\n${settlement}\n欢迎下次再来玩哦~`]
-            : ['游戏结束！\n你们输惹...\n但没关系，下次一定能行！', image(buffer)])
+            ? [`✅ 游戏结束。`, image(buffer), `\n继续游戏后的结算：\n${settlement}`]
+            : ['✅ 游戏结束。', image(buffer)])
         }
 
         if (won) return await celebrate(session, channelId, players, buffer)
@@ -373,7 +373,7 @@ export function apply(ctx: Context, config: Config) {
       await ctx.monetary.gain(await uidOf(session, userId), reward)
       const record = await getRecord(userId, username)
       await ctx.database.set('player_2048_records', { userId }, { moneyChange: record.moneyChange + reward })
-      lines.push(`【${username}】：【+${reward}】`)
+      lines.push(`${username}：+${reward}`)
     }
     return lines.join('\n')
   }
@@ -390,18 +390,18 @@ export function apply(ctx: Context, config: Config) {
       })
       if (reward > 0) {
         await ctx.monetary.gain(await uidOf(session, userId), reward)
-        lines.push(`【${username}】：【+${reward}】`)
+        lines.push(`${username}：+${reward}`)
       }
     }
     const settlement = lines.length ? `\n结算结果如下：\n${lines.join('\n')}` : ''
 
     if (!config.enableContinuedPlayAfter2048Win) {
       await resetGame(channelId)
-      return sendMessage(session, ['2048！\n恭喜🎉你们赢了！\n', image(buffer), `${settlement}\n下次再见哦~`])
+      return sendMessage(session, ['✅ 达成 2048。', image(buffer), settlement])
     }
 
-    await sendMessage(session, ['2048！\n恭喜🎉你们赢了！\n', image(buffer), settlement])
-    await sendMessage(session, `【@${session.username}】\n作为赢得游戏的最后操作者！\n您有权决定是否继续游戏，请回复【继续游戏】或【到此为止】。\n不回复的话游戏会自动结束哦~`)
+    await sendMessage(session, ['✅ 达成 2048。', image(buffer), settlement])
+    await sendMessage(session, '请回复「继续游戏」或「到此为止」。不回复则自动结束。')
 
     if (pending.includes(channelId)) return
     pending.push(channelId)
@@ -411,12 +411,12 @@ export function apply(ctx: Context, config: Config) {
         if (!answer) break
         if (answer === '继续游戏') {
           await ctx.database.set('game_2048_records', { channelId }, { isKeepPlaying: true })
-          return sendMessage(session, `【@${session.username}】\n您选择了【继续游戏】！让我看看你们能走多远！`)
+          return sendMessage(session, '✅ 继续游戏。')
         }
         if (answer === '到此为止') break
       }
       await resetGame(channelId)
-      return sendMessage(session, `【@${session.username}】\n该局游戏结束咯~\n那就让我们下次再见吧~`)
+      return sendMessage(session, '✅ 本局结束。')
     } finally {
       pending.splice(pending.indexOf(channelId), 1)
     }
@@ -428,10 +428,10 @@ export function apply(ctx: Context, config: Config) {
       const record = options.across
         ? (await ctx.database.select('game_2048_records').orderBy('best', 'desc').limit(1).execute())[0]
         : await getGame(channelOf(session))
-      if (!record) return sendMessage(session, '未找到任何游戏记录。')
-      const names = record.bestPlayers.map((player) => `【${player.username}】`).join('\n') || '（暂无）'
+      if (!record) return sendMessage(session, '⚠️ 未找到任何游戏记录。')
+      const names = record.bestPlayers.map((player) => player.username).join('\n') || '（暂无）'
       const scope = options.across ? '跨群' : ''
-      return sendMessage(session, `${scope}历史最高数：【${record.highestNumber}】\n${scope}历史最高分为：【${record.best}】\n参与的玩家如下：\n${names}`)
+      return sendMessage(session, `📋 ${scope}历史最高数字：${record.highestNumber}\n${scope}历史最高分：${record.best}\n参与玩家：\n${names}`)
     })
 
   cmd.subcommand('.排行榜 [type:string] [count:posint]', '查看排行榜')
@@ -440,15 +440,15 @@ export function apply(ctx: Context, config: Config) {
     .action(async ({ session }, type, count = config.defaultMaxLeaderboardEntries) => {
       const entry = LEADERBOARDS[type]
       if (!entry) {
-        return sendMessage(session, `请指定排行榜类型：\n${Object.keys(LEADERBOARDS).map((key, i) => `${i + 1}. ${key}`).join('\n')}\n例如：2048Game.排行榜 最高分数`)
+        return sendMessage(session, `⚠️ 请指定排行榜类型：\n${Object.keys(LEADERBOARDS).map((key, i) => `${i + 1}. ${key}`).join('\n')}\n例：2048Game.排行榜 最高分数`)
       }
       const players = await ctx.database
         .select('player_2048_records')
         .orderBy(entry.field, 'desc')
         .limit(Math.min(count, 50))
         .execute()
-      if (!players.length) return sendMessage(session, '暂无数据。')
-      return sendMessage(session, [`${entry.title}：`, ...players.map((player, index) =>
+      if (!players.length) return sendMessage(session, '⚠️ 暂无数据。')
+      return sendMessage(session, [`📋 ${entry.title}：`, ...players.map((player, index) =>
         `${index + 1}. ${player.username}：${player[entry.field]} ${entry.unit}`)].join('\n'))
     })
 
@@ -456,8 +456,8 @@ export function apply(ctx: Context, config: Config) {
     .action(async ({ session }, target) => {
       const userId = target ? target.split(':')[1] : session.userId
       const [record] = await ctx.database.get('player_2048_records', { userId })
-      if (!record) return sendMessage(session, `查询对象：${userId}\n无任何游戏记录。`)
+      if (!record) return sendMessage(session, `⚠️ 查询对象 ${userId} 没有任何游戏记录。`)
       const { username, win, lose, moneyChange, best, highestNumber } = record
-      return sendMessage(session, `查询对象：${username}\n最高数字为：${highestNumber}\n最高分数为：${best} 分\n胜场次数为：${win} 次\n输场次数为：${lose} 次\n损益为：${moneyChange} 点`)
+      return sendMessage(session, `📋 ${username} 的记录\n最高数字：${highestNumber}\n最高分数：${best} 分\n胜场：${win} 次\n输场：${lose} 次\n损益：${moneyChange} 点`)
     })
 }
