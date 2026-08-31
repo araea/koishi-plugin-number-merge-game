@@ -6,10 +6,10 @@ export type Direction = 'up' | 'down' | 'left' | 'right'
 
 /** 一个字符对应一个方向，允许一次输入多个，如 `左左上右`。 */
 export const DIRECTIONS: Record<string, Direction> = {
-  上: 'up', s: 'up', u: 'up',
-  下: 'down', x: 'down', d: 'down',
-  左: 'left', z: 'left', l: 'left',
-  右: 'right', y: 'right', r: 'right',
+  上: 'up', '↑': 'up', w: 'up', u: 'up',
+  下: 'down', '↓': 'down', s: 'down', x: 'down',
+  左: 'left', '←': 'left', a: 'left', l: 'left', z: 'left',
+  右: 'right', '→': 'right', d: 'right', r: 'right', y: 'right',
 }
 
 export const isDirection = (char: string) => char.toLowerCase() in DIRECTIONS

@@ -29,13 +29,12 @@ export interface GameRecord {
   gridSize: number
 }
 
-/** 本局已加入的玩家与其投入。 */
+/** 本局参与者。开始者和进行过移动的玩家会自动加入。 */
 export interface GamingPlayer {
   id: number
   channelId: string
   userId: string
   username: string
-  money: number
 }
 
 export interface PlayerRecord {
@@ -43,10 +42,8 @@ export interface PlayerRecord {
   userId: string
   username: string
   win: number
-  lose: number
   best: number
   highestNumber: number
-  moneyChange: number
 }
 
 export function defineTables(ctx: Context) {
@@ -71,7 +68,6 @@ export function defineTables(ctx: Context) {
     channelId: 'string',
     userId: 'string',
     username: 'string',
-    money: 'unsigned',
   }, key)
 
   ctx.model.extend('player_2048_records', {
@@ -79,9 +75,7 @@ export function defineTables(ctx: Context) {
     userId: 'string',
     username: 'string',
     win: 'unsigned',
-    lose: 'unsigned',
     best: 'unsigned',
     highestNumber: 'unsigned',
-    moneyChange: 'double',
   }, key)
 }

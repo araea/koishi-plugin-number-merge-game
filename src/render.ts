@@ -68,9 +68,9 @@ function html({ grid, size, score, best, isOver, isWon }: Board) {
     : '')).join('')
 
   const banner = isOver
-    ? '<div class="game-message game-over"><p>你们输了!</p><div class="lower"><a>下次一定</a></div></div>'
+    ? '<div class="game-message game-over"><p>本局结束</p><div class="lower"><a>再来一局</a></div></div>'
     : isWon
-      ? '<div class="game-message game-won"><p>你们赢了!</p><div class="lower"><a>继续游戏</a><a>到此为止</a></div></div>'
+      ? '<div class="game-message game-won"><p>2048!</p><div class="lower"><a>成就解锁 · 可继续挑战</a></div></div>'
       : ''
 
   return `<!DOCTYPE html>
