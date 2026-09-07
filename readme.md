@@ -1,44 +1,28 @@
-koishi-plugin-number-merge-game
-========================
+# koishi-plugin-number-merge-game
 
-[<img alt="github" src="https://img.shields.io/badge/github-araea/koishi__plugin__number__merge__game-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/araea/koishi-plugin-number-merge-game)
-[<img alt="npm" src="https://img.shields.io/npm/v/koishi-plugin-number-merge-game.svg?style=for-the-badge&color=fc8d62&logo=npm" height="20">](https://www.npmjs.com/package/koishi-plugin-number-merge-game)
+2048 游戏插件。
 
-Koishi 的 2048 游戏插件。
+## 安装
 
-## 使用
+~~~sh
+yarn add koishi-plugin-number-merge-game
+~~~
 
-发送 `2048` 开局。游戏中发送 `上、下、左、右` 或 `W、A、S、D`，支持连续输入。
+在 Koishi 配置中启用 koishi-plugin-number-merge-game，并提供 database 和 puppeteer 服务。
 
 ## 指令
 
 | 指令 | 说明 |
 | --- | --- |
-| `2048` | 开始游戏；已有游戏时查看棋盘 |
-| `2048.移动 <方向串>` | 显式移动，如 `2048.移动 左左上` |
-| `2048.记录 [@某人]` | 查看生涯成就 |
-| `2048.排行 [人数]` | 成就排行榜 |
-| `2048.结束` | 发起者结束本局 |
+| 2048 | 开始游戏；已有游戏时查看棋盘 |
+| 2048.移动 &lt;方向串&gt; | 移动，例如 2048.移动 左左上 |
+| 2048.记录 [@某人] | 查看生涯成就 |
+| 2048.排行 [人数] | 查看成就排行 |
+| 2048.结束 | 由发起者结束当前游戏 |
 
-达成 2048 记入生涯记录，之后可继续挑战更高数字。
+游戏中可发送上、下、左、右或 W、A、S、D，也可连续输入。
+达到 2048 后会记录成就，并可继续游戏。
 
-## QQ 群
+## 许可证
 
-956758505
-
-<br>
-
-#### License
-
-<sup>
-Licensed under either of <a href="LICENSE-APACHE">Apache License, Version
-2.0</a> or <a href="LICENSE-MIT">MIT license</a> at your option.
-</sup>
-
-<br>
-
-<sub>
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in this crate by you, as defined in the Apache-2.0 license, shall
-be dual licensed as above, without any additional terms or conditions.
-</sub>
+可按 [Apache-2.0](LICENSE-APACHE) 或 [MIT](LICENSE-MIT) 使用。
