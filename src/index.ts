@@ -13,13 +13,13 @@ export const inject = {
 
 export const usage = `## 使用
 
-发送 \`2048\` 开局。游戏中可以发送上、下、左、右或 W、A、S、D，也可以连续输入。
+发送 \`2048\` 开局。对局中可以发送上、下、左、右或 W、A、S、D，也可以连续输入。
 
 ## 指令
 
 | 指令 | 说明 |
 | --- | --- |
-| \`2048\` | 开始游戏；已有游戏时查看棋盘 |
+| \`2048\` | 开始对局；已有对局时查看棋盘 |
 | \`2048.移动 <方向串>\` | 移动，例如 \`2048.移动 左左上\` |
 | \`2048.战绩 [@某人]\` | 生涯战绩 |
 | \`2048.排行榜 [人数]\` | 综合排行榜 |
@@ -32,17 +32,31 @@ const GRID_SIZE = 4
 
 export function apply(ctx: Context, config: Config) {
   defineTables(ctx)
+  const logger = ctx.logger(name)
 
   // 同频道的开局、移动和结束串行处理，避免并发消息覆盖棋盘。
   const mutating = new Set<string>()
   const channelOf = (session: Session) => session.channelId || `privateChat_${session.userId}`
+  // 自动撤回：同一频道只保留最新一条，上一条延时撤回。
+  const lastMessage = new Map<string, { id: string; timestamp: number }>()
 
   async function sendMessage(session: Session, content: h.Fragment) {
     const [messageId] = await session.send(content)
     if (!config.retractDelay || !messageId) return
-    ctx.setTimeout(() => {
-      session.bot.deleteMessage(session.channelId, messageId).catch(() => {})
-    }, config.retractDelay * 1000)
+    const channelId = channelOf(session)
+    const previous = lastMessage.get(channelId)
+    if (previous) {
+      const passed = Date.now() - previous.timestamp
+      // 超过两分钟的消息撤不回来，留 2 秒余量。
+      if (passed < 118000) {
+        ctx.setTimeout(() => {
+          session.bot.deleteMessage(session.channelId, previous.id).catch((error) => {
+            logger.debug('撤回消息失败：%s', error.message)
+          })
+        }, Math.max(0, config.retractDelay * 1000 - passed))
+      }
+    }
+    lastMessage.set(channelId, { id: messageId, timestamp: Date.now() })
   }
 
   async function getGame(channelId: string): Promise<GameRecord> {
@@ -250,7 +264,7 @@ export function apply(ctx: Context, config: Config) {
         .execute()
       if (!players.length) return sendMessage(session, '📋 排行榜还空着\n第一个达成 2048 的人，名字会写在这里。\n发送「2048」开一局。')
       const lines = players.map((player, index) =>
-        `${index + 1}. ${player.username}｜${player.best} 分｜最高 ${player.highestNumber}｜2048 × ${player.win}`)
+        `${index + 1}. ${player.username} · ${player.best} 分 · 最高 ${player.highestNumber} · 2048 × ${player.win}`)
       return sendMessage(session, `📋 2048 综合排行榜\n${lines.join('\n')}`)
     })
 

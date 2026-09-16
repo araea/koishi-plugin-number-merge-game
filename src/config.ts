@@ -19,6 +19,6 @@ export const Config: Schema<Config> = Schema.intersect([
 
   Schema.object({
     enableDirectInput: Schema.boolean().default(true)
-      .description('游戏中直接发送方向串（如 `左左上`）即可移动，无需指令前缀。'),
+      .description('对局中直接发送方向串（如 `左左上`）即可移动，无需指令前缀。'),
   }).description('操作设置'),
 ])
