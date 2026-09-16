@@ -1,6 +1,6 @@
 # koishi-plugin-number-merge-game
 
-2048 游戏
+2048 · 用方向串把数字合成更大的块
 
 ## 安装
 
