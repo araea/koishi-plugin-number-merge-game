@@ -21,8 +21,8 @@ export const usage = `## 使用
 | --- | --- |
 | \`2048\` | 开始游戏；已有游戏时查看棋盘 |
 | \`2048.移动 <方向串>\` | 移动，例如 \`2048.移动 左左上\` |
-| \`2048.记录 [@某人]\` | 生涯战绩 |
-| \`2048.排行 [人数]\` | 综合排行榜 |
+| \`2048.战绩 [@某人]\` | 生涯战绩 |
+| \`2048.排行榜 [人数]\` | 综合排行榜 |
 | \`2048.结束\` | 由发起者结束当前对局 |
 
 达到 2048 后记入战绩，并且可以继续挑战更高的数字。`
@@ -232,7 +232,7 @@ export function apply(ctx: Context, config: Config) {
       }
     })
 
-  cmd.subcommand('.记录 [target:user]', '查看生涯战绩')
+  cmd.subcommand('.战绩 [target:user]', '查看生涯战绩')
     .action(async ({ session }, target) => {
       const userId = target ? target.split(':')[1] : session.userId
       const [record] = await ctx.database.get('player_2048_records', { userId })
@@ -241,7 +241,7 @@ export function apply(ctx: Context, config: Config) {
         `📋 ${record.username} 的 2048 战绩\n最高数字：${record.highestNumber}\n最高分数：${record.best}\n达成 2048：${record.win} 次`)
     })
 
-  cmd.subcommand('.排行 [count:posint]', '查看综合排行榜')
+  cmd.subcommand('.排行榜 [count:posint]', '查看综合排行榜')
     .action(async ({ session }, count = config.defaultMaxLeaderboardEntries) => {
       const players = await ctx.database
         .select('player_2048_records')
