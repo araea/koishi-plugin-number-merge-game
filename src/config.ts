@@ -2,6 +2,7 @@ import { Schema } from 'koishi'
 
 export interface Config {
   defaultMaxLeaderboardEntries: number
+  disableImages: boolean
   retractDelay: number
   imageType: 'png' | 'jpeg' | 'webp'
   enableDirectInput: boolean
@@ -13,6 +14,7 @@ export const Config: Schema<Config> = Schema.intersect([
   }).description('排行榜设置'),
 
   Schema.object({
+    disableImages: Schema.boolean().default(false).description('全部改用文本，不发送棋盘图片。'),
     retractDelay: Schema.natural().default(0).description('自动撤回延迟（秒），0 表示不撤回。'),
     imageType: Schema.union(['png', 'jpeg', 'webp']).default('png').description('发送的图片格式。'),
   }).description('消息发送设置'),

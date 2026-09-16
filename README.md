@@ -8,7 +8,7 @@
 yarn add koishi-plugin-number-merge-game
 ```
 
-在 Koishi 配置中启用，并提供 database 与 puppeteer 服务。
+在 Koishi 配置中启用，并提供 database 服务；puppeteer 可选，用于图片输出。
 
 ## 指令
 

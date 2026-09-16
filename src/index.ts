@@ -8,7 +8,8 @@ import { render } from './render'
 export { Config }
 export const name = 'number-merge-game'
 export const inject = {
-  required: ['database', 'puppeteer'],
+  required: ['database'],
+  optional: ['puppeteer'],
 }
 
 export const usage = `## 使用
@@ -24,6 +25,8 @@ export const usage = `## 使用
 | \`2048.战绩 [@某人]\` | 生涯战绩 |
 | \`2048.排行榜 [人数]\` | 综合排行榜 |
 | \`2048.结束\` | 由发起者结束当前对局 |
+
+## 规则
 
 达到 2048 后记入战绩，并且可以继续挑战更高的数字。`
 
@@ -113,15 +116,31 @@ export function apply(ctx: Context, config: Config) {
     })
   }
 
-  const board = (game: GameRecord, extra: { isOver?: boolean; isWon?: boolean } = {}) => render(ctx, {
-    grid: game.progress,
-    size: game.gridSize,
-    score: game.score,
-    best: game.best,
-    ...extra,
-  }, config.imageType)
+  /** 图片渲染不可用时顶上来的等价牌面：一行比分，四行数字。 */
+  const boardText = (game: GameRecord) => {
+    const rows = normalize(game.progress).map((row) =>
+      row.map((item) => item?.value ?? '·').join(' '))
+    return `▍本局 ${game.score} · 最高 ${game.best}\n${rows.join('\n')}`
+  }
 
-  const image = (buffer: Uint8Array) => h.image(buffer, `image/${config.imageType}`)
+  /**
+   * 图是增强，不是前提：没装 puppeteer、部署者关图、渲染失败，都安静回退到文本。
+   */
+  async function board(
+    game: GameRecord,
+    extra: { isOver?: boolean; isWon?: boolean } = {},
+  ): Promise<h | string> {
+    if (config.disableImages || !ctx.puppeteer) return boardText(game)
+    const buffer = await render(ctx, {
+      grid: game.progress,
+      size: game.gridSize,
+      score: game.score,
+      best: game.best,
+      ...extra,
+    }, config.imageType)
+    return buffer ? h.image(buffer, `image/${config.imageType}`) : boardText(game)
+  }
+
   const controls = config.enableDirectInput
     ? '直接发送方向：上 / 下 / 左 / 右（也支持 WASD、箭头和连续输入）'
     : '发送「2048.移动 左」进行移动，方向支持连续输入。'
@@ -133,7 +152,7 @@ export function apply(ctx: Context, config: Config) {
     try {
       const game = await getGame(channelId)
       if (game.gameStatus !== '未开始') {
-        return sendMessage(session, ['💡 本频道已有一局 2048。\n', image(await board(game)), `\n${controls}`])
+        return sendMessage(session, ['💡 本频道已有一局 2048\n', await board(game), `\n${controls}`])
       }
 
       await ctx.database.remove('players_in_2048_playing', { channelId })
@@ -148,7 +167,7 @@ export function apply(ctx: Context, config: Config) {
         isWon: false,
         isKeepPlaying: false,
       })
-      return sendMessage(session, ['✅ 2048 开始。\n', image(await board(next)), `\n${controls}`])
+      return sendMessage(session, ['✅ 2048 开始\n', await board(next), `\n${controls}`])
     } finally {
       mutating.delete(channelId)
     }
@@ -182,7 +201,7 @@ export function apply(ctx: Context, config: Config) {
       try {
         // 获得锁后重新读取，确保基于最新棋盘计算。
         const game = await getGame(channelId)
-        if (game.gameStatus === '未开始') return sendMessage(session, '💡 本频道没有进行中的对局。\n发送「2048」开一局。')
+        if (game.gameStatus === '未开始') return sendMessage(session, '💡 本频道没有进行中的对局\n发送「2048」开一局。')
 
         await addParticipant(channelId, session.userId, session.username)
         let grid = normalize(game.progress)
@@ -198,7 +217,7 @@ export function apply(ctx: Context, config: Config) {
           }
         }
 
-        if (!moved) return sendMessage(session, ['💡 这个方向没有方块可以移动。\n', image(await board(game))])
+        if (!moved) return sendMessage(session, ['💡 这个方向没有方块可以移动\n', await board(game)])
 
         const top = highest(grid)
         const won = !game.isWon && top >= 2048
@@ -229,18 +248,18 @@ export function apply(ctx: Context, config: Config) {
         }
 
         const next = { ...game, ...update, isWon: game.isWon || won }
-        const buffer = await board(next, { isOver: over && !won, isWon: won })
+        const content = await board(next, { isOver: over && !won, isWon: won })
         if (over) {
           await resetGame(channelId)
           const summary = won
             ? '🏆 解锁生涯成就：2048！记录已保存，本局也已结束。'
-            : '✅ 本局结束。'
-          return sendMessage(session, [`${summary}\n发送「2048」再来一局。\n`, image(buffer)])
+            : '✅ 本局结束'
+          return sendMessage(session, [`${summary}\n发送「2048」再来一局。\n`, content])
         }
         if (won) {
-          return sendMessage(session, ['🏆 解锁生涯成就：2048！记录已保存，还可以继续挑战更高的数字。\n', image(buffer)])
+          return sendMessage(session, ['🏆 解锁生涯成就：2048！记录已保存，还可以继续挑战更高的数字。\n', content])
         }
-        return sendMessage(session, image(buffer))
+        return sendMessage(session, content)
       } finally {
         mutating.delete(channelId)
       }
@@ -263,9 +282,16 @@ export function apply(ctx: Context, config: Config) {
         .limit(Math.min(count, 50))
         .execute()
       if (!players.length) return sendMessage(session, '📋 排行榜还空着\n第一个达成 2048 的人，名字会写在这里。\n发送「2048」开一局。')
-      const lines = players.map((player, index) =>
+      // 整条消息五行封顶：标题一行，内容最多四行，更多时压到三行并留一行尾注
+      const shown = players.length > 4 ? players.slice(0, 3) : players
+      const hidden = players.length - shown.length
+      const lines = shown.map((player, index) =>
         `${index + 1}. ${player.username} · ${player.best} 分 · 最高 ${player.highestNumber} · 2048 × ${player.win}`)
-      return sendMessage(session, `📋 2048 综合排行榜\n${lines.join('\n')}`)
+      return sendMessage(session, [
+        '📋 2048 综合排行榜',
+        ...lines,
+        hidden > 0 ? `…… 另有 ${hidden} 人在榜` : null,
+      ].filter(Boolean).join('\n'))
     })
 
   cmd.subcommand('.结束', '结束当前对局')
@@ -275,7 +301,7 @@ export function apply(ctx: Context, config: Config) {
       mutating.add(channelId)
       try {
         const game = await getGame(channelId)
-        if (game.gameStatus === '未开始') return sendMessage(session, '💡 本频道没有进行中的对局。\n发送「2048」开一局。')
+        if (game.gameStatus === '未开始') return sendMessage(session, '💡 本频道没有进行中的对局\n发送「2048」开一局。')
         const participants = await ctx.database
           .select('players_in_2048_playing')
           .where({ channelId })
@@ -286,7 +312,7 @@ export function apply(ctx: Context, config: Config) {
           return sendMessage(session, `⚠️ 这一局由 ${owner?.username || '他人'} 发起\n只有发起者可以结束它。`)
         }
         await resetGame(channelId)
-        return sendMessage(session, '✅ 本局已结束。\n发送「2048」再来一局。')
+        return sendMessage(session, '✅ 本局已结束\n发送「2048」再来一局。')
       } finally {
         mutating.delete(channelId)
       }

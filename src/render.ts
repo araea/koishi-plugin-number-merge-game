@@ -1,7 +1,7 @@
 import { Context } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
 import { Grid } from './game'
-import { baseline, components, palettesOf, scheme, SHAPE } from './m3'
+import { baseline, components, EMPHASIZED_WEIGHT, MONO_STACK, palettesOf, scheme, TYPE } from './m3'
 
 /** 2048 的主色取暖橙，和方块本身的升温感一致；里程碑用的第三色改取玫红。 */
 const HUE = 52
@@ -42,14 +42,21 @@ function tileStyle(value: number) {
   // 深底配浅字、浅底配深字，阈值取在 M3 认为对比度开始不够的那一档
   const foreground = tone >= 62 ? PALETTE.primary(18) : PALETTE.primary(100)
 
-  // 数字越长字号越小，保证四位数也能完整落在方块里
+  // 数字越长字号越小，保证四位数也能完整落在方块里。
+  // 逐档取最接近的字阶：34 与 26 落在两档正中间，按「标题取大」向上取。
   const digits = String(value).length
-  const size = digits <= 2 ? 52 : digits === 3 ? 44 : digits === 4 ? 34 : 26
+  const size = digits <= 2 ? TYPE.displayLarge.size
+    : digits === 3 ? TYPE.displayMedium.size
+      : digits === 4 ? TYPE.displaySmall.size
+        : TYPE.headlineMedium.size
 
-  // Expressive 的「形状承载语义」：数值越大圆角越大，方块看起来越「饱满」
-  const radius = Math.round(SHAPE.large + (exponent - 1) * 0.8)
+  // Expressive 的「形状承载语义」：数值越大圆角越大，方块看起来越「饱满」。
+  // 原式 SHAPE.large + (exponent - 1) * 0.8 是 16 ~ 24 的连续渐变，
+  // 逐档取最近的形状刻度后落在这两档上，前三档（2 / 4 / 8）留在 large。
+  // 名字写成 CSS 变量的后缀形式，与 systemVars() 的 kebab 命名一致。
+  const corner = exponent <= 3 ? 'large' : 'large-increased'
 
-  return { background, foreground, size, radius, chroma }
+  return { background, foreground, size, corner, chroma }
 }
 
 function styles(size: number) {
@@ -62,8 +69,8 @@ function styles(size: number) {
   // 每个档位一条规则，模板里只要写 .tile-<指数>
   const tiles = Array.from({ length: 12 }, (_, index) => {
     const value = 2 ** (index + 1)
-    const { background, foreground, size: fontSize, radius } = tileStyle(value)
-    return `.tile-${index + 1} .tile-face{background:${background};color:${foreground};font-size:${fontSize}px;border-radius:${radius}px}`
+    const { background, foreground, size: fontSize, corner } = tileStyle(value)
+    return `.tile-${index + 1} .tile-face{background:${background};color:${foreground};font-size:${fontSize}px;border-radius:var(--md-sys-shape-corner-${corner})}`
   }).join('')
 
   return `${baseline(SCHEME)}${components()}
@@ -72,32 +79,32 @@ body{display:flex;justify-content:center;padding:32px 24px 28px}
 
 .topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:24px}
 .brand{display:flex;flex-direction:column;gap:2px}
-.brand h1{margin:0;font-size:45px;line-height:52px;font-weight:600;letter-spacing:-.5px;color:var(--md-sys-color-primary)}
-.brand p{margin:0;font-size:12px;line-height:16px;letter-spacing:.4px;color:var(--md-sys-color-on-surface-variant)}
+.brand h1{margin:0;font-size:${TYPE.displayMedium.size}px;line-height:${TYPE.displayMedium.line}px;font-weight:${EMPHASIZED_WEIGHT.display};letter-spacing:-.5px;color:var(--md-sys-color-primary)}
+.brand p{margin:0;font-size:${TYPE.bodySmall.size}px;line-height:${TYPE.bodySmall.line}px;letter-spacing:.4px;color:var(--md-sys-color-on-surface-variant)}
 
 .scores{display:flex;gap:8px}
 /* 比分块是一对并排的容器，当前分用主色容器抬一档，最高分退到中性容器 */
 .score{
   min-width:104px;padding:10px 18px 12px;
-  border-radius:${SHAPE.largeIncreased}px;
+  border-radius:var(--md-sys-shape-corner-large-increased);
   background:var(--md-sys-color-surface-container-high);
   color:var(--md-sys-color-on-surface);
   text-align:center;
 }
 .score--current{background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)}
-.score .label{display:block;font-size:11px;line-height:16px;font-weight:600;letter-spacing:.5px;opacity:.72}
-.score .value{display:block;font-size:28px;line-height:36px;font-weight:600;font-variant-numeric:tabular-nums}
+.score .label{display:block;font-size:${TYPE.labelSmall.size}px;line-height:${TYPE.labelSmall.line}px;font-weight:${EMPHASIZED_WEIGHT.label};letter-spacing:.5px;opacity:.72}
+.score .value{display:block;font-family:${MONO_STACK};font-size:${TYPE.headlineMedium.size}px;line-height:${TYPE.headlineMedium.line}px;font-weight:${EMPHASIZED_WEIGHT.headline};font-variant-numeric:tabular-nums}
 
 .board{
   position:relative;box-sizing:border-box;
   width:${board}px;height:${board}px;padding:${GAP}px;
-  border-radius:${SHAPE.extraExtraLarge}px;
+  border-radius:var(--md-sys-shape-corner-extra-extra-large);
   background:var(--md-sys-color-surface-container-high);
 }
 .cells,.tiles{position:absolute;inset:${GAP}px}
 .cell{
   position:absolute;width:${CELL}px;height:${CELL}px;
-  border-radius:${SHAPE.large}px;
+  border-radius:var(--md-sys-shape-corner-large);
   /* 空位比棋盘再暗一档，像挖出来的凹槽，落子后的方块才显得是浮在上面的 */
   background:var(--md-sys-color-surface-dim);
 }
@@ -105,7 +112,7 @@ body{display:flex;justify-content:center;padding:32px 24px 28px}
 .tile-face{
   display:flex;align-items:center;justify-content:center;
   width:100%;height:100%;
-  font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.5px;
+  font-weight:${EMPHASIZED_WEIGHT.title};font-variant-numeric:tabular-nums;letter-spacing:-.5px;
 }
 ${tiles}${positions}
 
@@ -113,17 +120,17 @@ ${tiles}${positions}
 .veil{
   position:absolute;inset:0;z-index:2;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
-  border-radius:${SHAPE.extraExtraLarge}px;
+  border-radius:var(--md-sys-shape-corner-extra-extra-large);
   background:color-mix(in srgb, var(--md-sys-color-scrim) 42%, transparent);
 }
 .veil .panel{
   display:flex;flex-direction:column;align-items:center;gap:12px;
   padding:28px 36px;
-  border-radius:${SHAPE.extraLarge}px;
+  border-radius:var(--md-sys-shape-corner-extra-large);
   background:var(--md-sys-color-surface-container-lowest);
   box-shadow:var(--md-sys-elevation-level3);
 }
-.veil h2{margin:0;font-size:32px;line-height:40px;font-weight:600;color:var(--md-sys-color-on-surface)}
+.veil h2{margin:0;font-size:${TYPE.headlineLarge.size}px;line-height:${TYPE.headlineLarge.line}px;font-weight:${EMPHASIZED_WEIGHT.headline};color:var(--md-sys-color-on-surface)}
 .veil--won h2{color:var(--md-sys-color-tertiary)}
 
 .hint{margin-top:20px;text-align:center}`
@@ -142,7 +149,7 @@ export function html({ grid, size, score, best, isOver, isWon }: Board) {
   })).join('')
 
   const veil = isOver
-    ? `<div class="veil"><div class="panel"><h2>本局结束</h2><span class="m3-chip m3-chip--primary">发送 2048 再来一局</span></div></div>`
+    ? `<div class="veil"><div class="panel"><h2>本局结束</h2><span class="m3-chip m3-chip--primary">发送「2048」再来一局</span></div></div>`
     : isWon
       ? `<div class="veil veil--won"><div class="panel"><h2>2048 达成</h2><span class="m3-chip m3-chip--tertiary">成就解锁 · 可继续挑战</span></div></div>`
       : ''
@@ -172,12 +179,18 @@ export function html({ grid, size, score, best, isOver, isWon }: Board) {
 
 export async function render(ctx: Context, board: Board, type: 'png' | 'jpeg' | 'webp') {
   const width = CELL * board.size + GAP * (board.size + 1) + PAD * 2
-  const page = await ctx.puppeteer.page()
   try {
-    await page.setViewport({ width, height: width })
-    await page.setContent(html(board))
-    return await page.screenshot({ fullPage: true, type })
-  } finally {
-    await page.close()
+    const page = await ctx.puppeteer.page()
+    try {
+      await page.setViewport({ width, height: width })
+      await page.setContent(html(board))
+      return await page.screenshot({ fullPage: true, type })
+    } finally {
+      await page.close()
+    }
+  } catch (error: any) {
+    // 出图只是增强：浏览器起不来、渲染超时，都安静回退到等价文本
+    ctx.logger('number-merge-game').warn('图片渲染失败，本次回退为文本：%s', error?.message ?? error)
+    return null
   }
 }
