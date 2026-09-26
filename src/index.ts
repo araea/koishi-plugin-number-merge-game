@@ -1,5 +1,5 @@
 import { registerDirectInput, directInputConflict } from './ux'
-import { usePresentation } from './ux'
+import { present } from './ux'
 import { Context, h, Session } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
 import { Config } from './config'
@@ -36,7 +36,6 @@ const EMPTY: Grid = []
 const GRID_SIZE = 4
 
 export function apply(ctx: Context, config: Config) {
-  const presentation = usePresentation(ctx, '2048')
   defineTables(ctx)
   const logger = ctx.logger(name)
 
@@ -134,7 +133,7 @@ export function apply(ctx: Context, config: Config) {
     game: GameRecord,
     extra: { isOver?: boolean; isWon?: boolean } = {},
   ): Promise<h | string> {
-    if (config.disableImages || !ctx.puppeteer || presentation.textOnly(session)) return boardText(game)
+    if (config.disableImages || !ctx.puppeteer) return boardText(game)
     const buffer = await render(ctx, {
       grid: game.progress,
       size: game.gridSize,
@@ -142,7 +141,7 @@ export function apply(ctx: Context, config: Config) {
       best: game.best,
       ...extra,
     }, config.imageType)
-    return h('p', {}, h.normalize(presentation.present(session, buffer ? h.image(buffer, `image/${config.imageType}`) : null, h.text(boardText(game)))))
+    return h('p', {}, h.normalize(present(buffer ? h.image(buffer, `image/${config.imageType}`) : null, h.text(boardText(game)))))
   }
 
   const controls = config.enableDirectInput
