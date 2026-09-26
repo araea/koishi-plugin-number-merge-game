@@ -1,13 +1,16 @@
 {
   "name": "koishi-plugin-number-merge-game",
   "description": "Koishi 2048 游戏：支持多人对局、成就记录和排行榜。",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
     "lib",
     "LICENSE-APACHE",
-    "LICENSE-MIT"
+    "LICENSE-MIT",
+    "DESIGN_SYSTEM.md",
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "koishi": {
     "service": {
@@ -40,5 +43,8 @@
   },
   "devDependencies": {
     "koishi-plugin-puppeteer": "^3.9.0"
+  },
+  "scripts": {
+    "check:design": "node scripts/check-design-system.mjs"
   }
 }

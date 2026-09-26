@@ -1,7 +1,7 @@
 import { Context } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
 import { Grid } from './game'
-import { baseline, components, EMPHASIZED_WEIGHT, MONO_STACK, palettesOf, scheme, TYPE } from './m3'
+import { baseline, components, EMPHASIZED_WEIGHT, MONO_STACK, palettesOf, scheme, TYPE, onColor } from './m3'
 
 /** 2048 的主色取暖橙，和方块本身的升温感一致；里程碑用的第三色改取玫红。 */
 const HUE = 52
@@ -40,7 +40,7 @@ function tileStyle(value: number) {
 
   const background = milestone ? ramp(tone) : PALETTE.primary(tone)
   // 深底配浅字、浅底配深字，阈值取在 M3 认为对比度开始不够的那一档
-  const foreground = tone >= 62 ? PALETTE.primary(18) : PALETTE.primary(100)
+  const foreground = onColor(background)
 
   // 数字越长字号越小，保证四位数也能完整落在方块里。
   // 逐档取最接近的字阶：34 与 26 落在两档正中间，按「标题取大」向上取。

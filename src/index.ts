@@ -1,3 +1,5 @@
+import { registerDirectInput, directInputConflict } from './ux'
+import { usePresentation } from './ux'
 import { Context, h, Session } from 'koishi'
 import {} from 'koishi-plugin-puppeteer'
 import { Config } from './config'
@@ -34,6 +36,7 @@ const EMPTY: Grid = []
 const GRID_SIZE = 4
 
 export function apply(ctx: Context, config: Config) {
+  const presentation = usePresentation(ctx, '2048')
   defineTables(ctx)
   const logger = ctx.logger(name)
 
@@ -127,10 +130,11 @@ export function apply(ctx: Context, config: Config) {
    * 图是增强，不是前提：没装 puppeteer、部署者关图、渲染失败，都安静回退到文本。
    */
   async function board(
+    session: Session,
     game: GameRecord,
     extra: { isOver?: boolean; isWon?: boolean } = {},
   ): Promise<h | string> {
-    if (config.disableImages || !ctx.puppeteer) return boardText(game)
+    if (config.disableImages || !ctx.puppeteer || presentation.textOnly(session)) return boardText(game)
     const buffer = await render(ctx, {
       grid: game.progress,
       size: game.gridSize,
@@ -138,7 +142,7 @@ export function apply(ctx: Context, config: Config) {
       best: game.best,
       ...extra,
     }, config.imageType)
-    return buffer ? h.image(buffer, `image/${config.imageType}`) : boardText(game)
+    return h('p', {}, h.normalize(presentation.present(session, buffer ? h.image(buffer, `image/${config.imageType}`) : null, h.text(boardText(game)))))
   }
 
   const controls = config.enableDirectInput
@@ -152,7 +156,7 @@ export function apply(ctx: Context, config: Config) {
     try {
       const game = await getGame(channelId)
       if (game.gameStatus !== '未开始') {
-        return sendMessage(session, ['💡 本频道已有一局 2048\n', await board(game), `\n${controls}`])
+        return sendMessage(session, ['💡 本频道已有一局 2048\n', await board(session, game), `\n${controls}`])
       }
 
       await ctx.database.remove('players_in_2048_playing', { channelId })
@@ -167,19 +171,30 @@ export function apply(ctx: Context, config: Config) {
         isWon: false,
         isKeepPlaying: false,
       })
-      return sendMessage(session, ['✅ 2048 开始\n', await board(next), `\n${controls}`])
+      return sendMessage(session, ['✅ 2048 开始\n', await board(session, next), `\n${controls}`])
     } finally {
       mutating.delete(channelId)
     }
   }
 
   // 只接管“整条消息都是方向”的内容，避免影响正常聊天。
+  registerDirectInput(ctx, 'number-merge-game', async (session) => {
+    if (!ctx.filter(session)) return false;
+    if (!config.enableDirectInput) return false
+    const content = session.content?.replace(/\s/g, '')
+    if (!content || ![...content].every(isDirection)) return false
+    const [game] = await ctx.database.get('game_2048_records', { channelId: channelOf(session) })
+    if (!game || game.gameStatus === '未开始') return false
+    return true
+  });
+
   ctx.middleware(async (session, next) => {
     if (!config.enableDirectInput) return next()
     const content = session.content?.replace(/\s/g, '')
     if (!content || ![...content].every(isDirection)) return next()
     const game = await getGame(channelOf(session))
     if (game.gameStatus === '未开始') return next()
+    if (await directInputConflict(ctx, session)) return;
     await session.execute(`2048.移动 ${content}`)
   })
 
@@ -217,7 +232,7 @@ export function apply(ctx: Context, config: Config) {
           }
         }
 
-        if (!moved) return sendMessage(session, ['💡 这个方向没有方块可以移动\n', await board(game)])
+        if (!moved) return sendMessage(session, ['💡 这个方向没有方块可以移动\n', await board(session, game)])
 
         const top = highest(grid)
         const won = !game.isWon && top >= 2048
@@ -248,7 +263,7 @@ export function apply(ctx: Context, config: Config) {
         }
 
         const next = { ...game, ...update, isWon: game.isWon || won }
-        const content = await board(next, { isOver: over && !won, isWon: won })
+        const content = await board(session, next, { isOver: over && !won, isWon: won })
         if (over) {
           await resetGame(channelId)
           const summary = won
@@ -283,7 +298,7 @@ export function apply(ctx: Context, config: Config) {
         .execute()
       if (!players.length) return sendMessage(session, '📋 排行榜还空着\n第一个达成 2048 的人，名字会写在这里。\n发送「2048」开一局。')
       // 整条消息五行封顶：标题一行，内容最多四行，更多时压到三行并留一行尾注
-      const shown = players.length > 4 ? players.slice(0, 3) : players
+      const shown = players
       const hidden = players.length - shown.length
       const lines = shown.map((player, index) =>
         `${index + 1}. ${player.username} · ${player.best} 分 · 最高 ${player.highestNumber} · 2048 × ${player.win}`)
