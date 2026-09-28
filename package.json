@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-number-merge-game",
-  "description": "Koishi 群聊里的 2048 数字合并小游戏，支持同频道对局、生涯战绩与排行榜",
+  "description": "Koishi 插件：2048 数字合并小游戏，支持同频道对局、生涯战绩与排行榜。",
   "version": "2.4.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",

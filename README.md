@@ -1,6 +1,6 @@
 # 2048
 
-Koishi 群聊里的 2048 数字合并小游戏，支持同频道对局、生涯战绩与排行榜
+Koishi 插件：2048 数字合并小游戏，支持同频道对局、生涯战绩与排行榜
 
 [![GitHub](https://img.shields.io/badge/GitHub-仓库-181717)](https://github.com/araea/koishi-plugin-number-merge-game)
 [![npm](https://img.shields.io/badge/npm-包-CC0000)](https://www.npmjs.com/package/koishi-plugin-number-merge-game)
