@@ -39,8 +39,7 @@ npm i koishi-plugin-number-merge-game
 
 需要 `database` 服务。棋盘图片依赖 `puppeteer`，未安装或渲染失败时自动回退到文本棋盘。自动撤回仅对两分钟内的消息有效。
 
-## 链接
+## 必要链接
 
 - [设计系统](DESIGN_SYSTEM.md)
-- [更新日志](CHANGELOG.md)
 - [MIT](LICENSE-MIT) / [Apache-2.0](LICENSE-APACHE)
