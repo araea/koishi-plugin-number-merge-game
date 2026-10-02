@@ -80,7 +80,7 @@ body{display:flex;justify-content:center;padding:32px 24px 28px}
 .topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:24px}
 .brand{display:flex;flex-direction:column;gap:2px}
 .brand h1{margin:0;font-size:${TYPE.displayMedium.size}px;line-height:${TYPE.displayMedium.line}px;font-weight:${EMPHASIZED_WEIGHT.display};letter-spacing:-.5px;color:var(--md-sys-color-primary)}
-.brand p{margin:0;font-size:${TYPE.bodySmall.size}px;line-height:${TYPE.bodySmall.line}px;letter-spacing:.4px;color:var(--md-sys-color-on-surface-variant)}
+.brand p{margin:0;font-size:${TYPE.bodyMedium.size}px;line-height:${TYPE.bodyMedium.line}px;letter-spacing:.25px;color:var(--md-sys-color-on-surface-variant)}
 
 .scores{display:flex;gap:8px}
 /* 比分块是一对并排的容器，当前分用主色容器抬一档，最高分退到中性容器 */
@@ -92,7 +92,8 @@ body{display:flex;justify-content:center;padding:32px 24px 28px}
   text-align:center;
 }
 .score--current{background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)}
-.score .label{display:block;font-size:${TYPE.labelSmall.size}px;line-height:${TYPE.labelSmall.line}px;font-weight:${EMPHASIZED_WEIGHT.label};letter-spacing:.5px;opacity:.72}
+/* 层次靠字号字重拉开，不靠透明度：.72 的透明度会把标签对比度压到 3.4:1，低于 AA 的 4.5:1 */
+.score .label{display:block;font-size:13px;line-height:18px;font-weight:${EMPHASIZED_WEIGHT.label};letter-spacing:.5px}
 .score .value{display:block;font-family:${MONO_STACK};font-size:${TYPE.headlineMedium.size}px;line-height:${TYPE.headlineMedium.line}px;font-weight:${EMPHASIZED_WEIGHT.headline};font-variant-numeric:tabular-nums}
 
 .board{
@@ -133,7 +134,7 @@ ${tiles}${positions}
 .veil h2{margin:0;font-size:${TYPE.headlineLarge.size}px;line-height:${TYPE.headlineLarge.line}px;font-weight:${EMPHASIZED_WEIGHT.headline};color:var(--md-sys-color-on-surface)}
 .veil--won h2{color:var(--md-sys-color-tertiary)}
 
-.hint{margin-top:20px;text-align:center}`
+.hint{margin-top:20px;text-align:center;font-size:${TYPE.bodyMedium.size}px;line-height:${TYPE.bodyMedium.line}px}`
 }
 
 export function html({ grid, size, score, best, isOver, isWon }: Board) {
